@@ -883,9 +883,7 @@ cu_qcomp thrust_statevec_calcExpecPauliStr_subA(Qureg qureg, vector<int> x, vect
     auto endIter = indIter + qureg.numAmpsPerNode;
 
     cu_qcomp value = thrust::transform_reduce(indIter, endIter, functor, init, thrust::plus<cu_qcomp>());
-
-    value *= toCuQcomp(util_getPowerOfI(y.size()));
-    return value;
+    return value * toCuQcomp(util_getPowerOfI(y.size()));
 }
 
 
@@ -902,9 +900,7 @@ cu_qcomp thrust_statevec_calcExpecPauliStr_subB(Qureg qureg, vector<int> x, vect
     auto endIter = indIter + qureg.numAmpsPerNode;
 
     cu_qcomp value = thrust::transform_reduce(indIter, endIter, functor, init, thrust::plus<cu_qcomp>());
-
-    value *= toCuQcomp(util_getPowerOfI(y.size()));
-    return value;
+    return value * toCuQcomp(util_getPowerOfI(y.size()));
 }
 
 
@@ -921,9 +917,7 @@ cu_qcomp thrust_densmatr_calcExpecPauliStr_sub(Qureg qureg, vector<int> x, vecto
     auto endIter = indIter + powerOf2(qureg.logNumColsPerNode);
 
     cu_qcomp value = thrust::transform_reduce(indIter, endIter, functor, init, thrust::plus<cu_qcomp>());
-
-    value *= toCuQcomp(util_getPowerOfI(y.size()));
-    return value;
+    return value * toCuQcomp(util_getPowerOfI(y.size()));
 }
 
 

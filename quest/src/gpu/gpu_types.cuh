@@ -150,32 +150,6 @@ INLINE cu_qcomp operator * (const qreal& b, const cu_qcomp& a) {
 }
 
 
-INLINE void operator += (cu_qcomp& a, const cu_qcomp& b) {
-    a = a + b;
-}
-
-INLINE void operator -= (cu_qcomp& a, const cu_qcomp& b) {
-    a = a - b;
-}
-
-INLINE void operator *= (cu_qcomp& a, const cu_qcomp& b) {
-    a = a * b;
-}
-
-
-INLINE void operator += (cu_qcomp& a, const qreal& b) {
-    a = a + b;
-}
-
-INLINE void operator -= (cu_qcomp& a, const qreal& b) {
-    a = a - b;
-}
-
-INLINE void operator *= (cu_qcomp& a, const qreal& b) {
-    a = a * b;
-}
-
-
 
 /*
  * cu_qcomp UNARY FUNCTIONS
