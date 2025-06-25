@@ -23,6 +23,7 @@
 #include "quest/src/core/utilities.hpp"
 #include "quest/src/core/parser.hpp"
 #include "quest/src/core/printer.hpp"
+#include "quest/src/core/envvars.hpp"
 #include "quest/src/comm/comm_config.hpp"
 #include "quest/src/comm/comm_routines.hpp"
 #include "quest/src/cpu/cpu_config.hpp"
@@ -31,6 +32,7 @@
 #include <algorithm>
 #include <iostream>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <map>
@@ -708,8 +710,8 @@ namespace report {
     string PARSED_PAULI_STR_SUM_INCONSISTENT_NUM_PAULIS_IN_LINE =
         "Line ${LINE_NUMBER} specified ${NUM_LINE_PAULIS} Pauli operators which is inconsistent with the number of Paulis of the previous lines (${NUM_PAULIS}).";
 
-    string PARSED_PAULI_STR_SUM_COEFF_IS_INVALID =
-        "The coefficient of line ${LINE_NUMBER} could not be converted to a qcomp, possibly due to it exceeding the valid numerical range.";
+    string PARSED_PAULI_STR_SUM_COEFF_EXCEEDS_QCOMP_RANGE =
+        "The coefficient of line ${LINE_NUMBER} is a valid floating-point number but exceeds the range which can be stored in a qcomp. Consider increasing FLOAT_PRECISION.";
 
     string PARSED_STRING_IS_EMPTY =
         "The given string was empty (contained only whitespace characters) and could not be parsed.";
@@ -1066,6 +1068,22 @@ namespace report {
     string TEMP_ALLOC_FAILED =
         "A temporary allocation of ${NUM_ELEMS} elements (each of ${NUM_BYTES_PER_ELEM} bytes) failed, possibly because of insufficient memory.";
 
+
+    /*
+     * ENVIRONMENT VARIABLES
+     */
+
+    string INVALID_PERMIT_NODES_TO_SHARE_GPU_ENV_VAR =
+        "The optional, boolean '" + envvar_names::PERMIT_NODES_TO_SHARE_GPU + "' environment variable was specified to an invalid value. The variable can be unspecified, or set to '', '0' or '1'.";
+
+    string DEFAULT_EPSILON_ENV_VAR_NOT_A_REAL =
+        "The optional '" + envvar_names::DEFAULT_VALIDATION_EPSILON + "' environment variable was not a recognisable real number.";
+
+    string DEFAULT_EPSILON_ENV_VAR_EXCEEDS_QREAL_RANGE = 
+        "The optional '" + envvar_names::DEFAULT_VALIDATION_EPSILON + "' environment variable was larger (in magnitude) than the maximum value which can be stored in a qreal.";
+
+    string DEFAULT_EPSILON_ENV_VAR_IS_NEGATIVE =
+        "The optional '" + envvar_names::DEFAULT_VALIDATION_EPSILON + "' environment variable was negative. The value must be zero or positive.";
 }
 
 
@@ -1153,13 +1171,18 @@ qreal REDUCTION_EPSILON_FACTOR = 100;
  * overwritten (so will stay validate_STRUCT_PROPERTY_UNKNOWN_FLAG)
  */
 
-static qreal global_validationEpsilon = DEFAULT_VALIDATION_EPSILON;
+// the default epsilon is not known until runtime since the macro
+// UNSPECIFIED_DEFAULT_VALIDATION_EPSILON may be overriden by the
+// DEFAULT_VALIDATION_EPSILON environment variable. We do not read
+// the env-var immediately since it may malformed; we must wait for
+// initQuESTEnv() to validate and potentially throw an error
+static qreal global_validationEpsilon = -1; // must be overriden
 
 void validateconfig_setEpsilon(qreal eps) {
     global_validationEpsilon = eps;
 }
 void validateconfig_setEpsilonToDefault() {
-    global_validationEpsilon = DEFAULT_VALIDATION_EPSILON;
+    global_validationEpsilon = envvars_getDefaultValidationEpsilon();
 }
 qreal validateconfig_getEpsilon() {
     return global_validationEpsilon;
@@ -1364,13 +1387,8 @@ void validate_newEnvDistributedBetweenPower2Nodes(const char* caller) {
 
 void validate_newEnvNodesEachHaveUniqueGpu(const char* caller) {
 
-    // this validation can be disabled for debugging/dev purposes
-    // (caller should explicitly check this preprocessor too for clarity)
-    if (PERMIT_NODES_TO_SHARE_GPU)
-        return;
-
-    bool uniqueGpus = ! gpu_areAnyNodesBoundToSameGpu();
-    assertAllNodesAgreeThat(uniqueGpus, report::MULTIPLE_NODES_BOUND_TO_SAME_GPU, caller);
+    bool sharedGpus = gpu_areAnyNodesBoundToSameGpu();
+    assertAllNodesAgreeThat(!sharedGpus, report::MULTIPLE_NODES_BOUND_TO_SAME_GPU, caller);
 }
 
 void validate_gpuIsCuQuantumCompatible(const char* caller) {
@@ -3234,12 +3252,12 @@ void validate_parsedPauliStrSumLineHasConsistentNumPaulis(int numPaulis, int num
     assertThat(numPaulis == numLinePaulis, report::PARSED_PAULI_STR_SUM_INCONSISTENT_NUM_PAULIS_IN_LINE, vars, caller);
 }
 
-void validate_parsedPauliStrSumCoeffIsValid(bool isCoeffValid, string line, qindex lineIndex, const char* caller) {
+void validate_parsedPauliStrSumCoeffWithinQcompRange(bool isCoeffValid, string line, qindex lineIndex, const char* caller) {
 
     /// @todo we cannot yet report 'line' because tokenSubs so far only accepts integers :(
 
     tokenSubs vars = {{"${LINE_NUMBER}", lineIndex + 1}}; // lines begin at 1
-    assertThat(isCoeffValid, report::PARSED_PAULI_STR_SUM_COEFF_IS_INVALID, vars, caller);
+    assertThat(isCoeffValid, report::PARSED_PAULI_STR_SUM_COEFF_EXCEEDS_QCOMP_RANGE, vars, caller);
 }
 
 void validate_parsedStringIsNotEmpty(bool stringIsNotEmpty, const char* caller) {
@@ -4164,4 +4182,27 @@ void validate_tempAllocSucceeded(bool succeeded, qindex numElems, qindex numByte
         {"${NUM_BYTES_PER_ELEM}", numBytesPerElem}};
 
     assertThat(succeeded, report::TEMP_ALLOC_FAILED, vars, caller);
+}
+
+
+
+/*
+ * ENVIRONMENT VARIABLES
+ */
+
+void validate_envVarPermitNodesToShareGpu(string varValue, const char* caller) {
+
+    // though caller should gaurantee varValue contains at least one character, 
+    // we'll still check to avoid a segfault if this gaurantee is broken
+    bool isValid = (varValue.size() == 1) && (varValue[0] == '0' || varValue[0] == '1');
+    assertThat(isValid, report::INVALID_PERMIT_NODES_TO_SHARE_GPU_ENV_VAR, caller);
+}
+
+void validate_envVarDefaultValidationEpsilon(string varValue, const char* caller) {
+
+    assertThat(parser_isAnySizedReal(varValue), report::DEFAULT_EPSILON_ENV_VAR_NOT_A_REAL, caller);
+    assertThat(parser_isValidReal(varValue), report::DEFAULT_EPSILON_ENV_VAR_EXCEEDS_QREAL_RANGE, caller);
+
+    qreal eps = parser_parseReal(varValue);
+    assertThat(eps >= 0, report::DEFAULT_EPSILON_ENV_VAR_IS_NEGATIVE, caller);
 }

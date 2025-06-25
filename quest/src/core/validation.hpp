@@ -312,7 +312,7 @@ void validate_newPauliStrSumAllocs(PauliStrSum sum, qindex numBytesStrings, qind
 
 void validate_parsedPauliStrSumLineIsInterpretable(bool isInterpretable, string line, qindex lineIndex, const char* caller);
 
-void validate_parsedPauliStrSumCoeffIsValid(bool isCoeffValid, string line, qindex lineIndex, const char* caller);
+void validate_parsedPauliStrSumCoeffWithinQcompRange(bool isCoeffValid, string line, qindex lineIndex, const char* caller);
 
 void validate_parsedPauliStrSumLineHasConsistentNumPaulis(int numPaulis, int numLinePaulis, string line, qindex lineIndex, const char* caller);
 
@@ -488,7 +488,6 @@ void validate_densMatrExpecDiagMatrValueIsReal(qcomp value, qcomp exponent, cons
  * PARTIAL TRACE
  */
 
-
 void validate_quregCanBeReduced(Qureg qureg, int numTraceQubits, const char* caller);
 
 void validate_quregCanBeSetToReducedDensMatr(Qureg out, Qureg in, int numTraceQubits, const char* caller);
@@ -508,6 +507,16 @@ void validate_canReadFile(string fn, const char* caller);
  */
 
 void validate_tempAllocSucceeded(bool succeeded, qindex numElems, qindex numBytesPerElem, const char* caller);
+
+
+
+/*
+ * ENVIRONMENT VARIABLES
+ */
+
+void validate_envVarPermitNodesToShareGpu(string varValue, const char* caller);
+
+void validate_envVarDefaultValidationEpsilon(string varValue, const char* caller);
 
 
 
