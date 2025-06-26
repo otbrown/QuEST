@@ -1599,7 +1599,7 @@ void assertQuregFitsInCpuMem(int numQubits, int isDensMatr, int isDistrib, QuEST
         vars["${NUM_NODES}"] = numQuregNodes;
 
     // require expensive node consensus in case of heterogeneous RAMs
-    assertAllNodesAgreeThat(quregFitsInMem, report::NEW_QUREG_CANNOT_FIT_INTO_NON_DISTRIB_CPU_MEM, vars, caller);
+    assertAllNodesAgreeThat(quregFitsInMem, msg, vars, caller);
 }
 
 void assertQuregFitsInGpuMem(int numQubits, int isDensMatr, int isDistrib, int isGpuAccel, QuESTEnv env, const char* caller) {

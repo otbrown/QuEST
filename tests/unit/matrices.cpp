@@ -614,7 +614,8 @@ TEST_CASE( "createFullStateDiagMatr", TEST_CATEGORY ) {
                 ContainsSubstring("failed") || 
                 ContainsSubstring("insufficient available memory") || 
                 ContainsSubstring("available GPU memory") ||
-                ContainsSubstring("exceeds the available RAM") );
+                ContainsSubstring("exceeds the available RAM") ||
+                ContainsSubstring("exceeds the local available RAM") );
             #endif
         }
 
@@ -714,7 +715,8 @@ TEST_CASE( "createCustomFullStateDiagMatr", TEST_CATEGORY ) {
                     ContainsSubstring("failed") || 
                     ContainsSubstring("insufficient available memory") || 
                     ContainsSubstring("available GPU memory") ||
-                    ContainsSubstring("exceeds the available RAM") );
+                    ContainsSubstring("exceeds the available RAM") ||
+                    ContainsSubstring("exceeds the local available RAM") );
                 #endif
             }
         }
