@@ -431,6 +431,18 @@ void assert_fullStateDiagMatrIsDistributed(FullStateDiagMatr matr) {
         raiseInternalError("An accelerator function received a non-distributed FullStateDiagMatr where a distributed one was expected.");
 }
 
+void assert_fullStateDiagMatrTemplateParamsAreValid(bool multiplyLeft, bool multiplyRight, bool conjRight) {
+
+    bool valid = (
+        (  multiplyLeft &&   multiplyRight &&   conjRight) || // matr qureg conj(matr)
+        (  multiplyLeft && ! multiplyRight && ! conjRight) || // matr qureg
+        (! multiplyLeft &&   multiplyRight && ! conjRight)    //      qureg matr
+    );
+
+    if (!valid)
+        raiseInternalError("The accelerator function accel_densmatr_allTargDiagMatr_subA() recieved an invalid combination of template parameters.");
+}
+
 void assert_acceleratorQuregIsDistributed(Qureg qureg) {
 
     if (!qureg.isDistributed)
@@ -601,6 +613,11 @@ void error_gpuMemSyncQueriedButEnvNotGpuAccelerated() {
 void error_gpuDeadCopyMatrixFunctionCalled() {
 
     raiseInternalError("The internal GPU function copyMatrixIfGpuCompiled() was called, though is intended as dead-code - matrices needing copying to GPU should be stored as flat row-wise lists.");
+}
+
+void error_gpuDenseMatrixConjugatedAndTransposed() {
+
+    raiseInternalError("The GPU + cuQuantum implementation of anyCtrlAnyTargDenseMatr() assumes that at most one of template arguments ApplyConj and ApplyTransp is true, though this was violated.");
 }
 
 void assert_quregIsGpuAccelerated(Qureg qureg) {

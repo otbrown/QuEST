@@ -153,6 +153,8 @@ void assert_fullStateDiagMatrIsLocal(FullStateDiagMatr matr);
 
 void assert_fullStateDiagMatrIsDistributed(FullStateDiagMatr matr);
 
+void assert_fullStateDiagMatrTemplateParamsAreValid(bool multiplyLeft, bool multiplyRight, bool conjRight);
+
 void assert_acceleratorQuregIsDistributed(Qureg qureg);
 
 void assert_quregAndFullStateDiagMatrAreBothOrNeitherDistrib(Qureg qureg, FullStateDiagMatr matr);
@@ -226,6 +228,8 @@ void error_gpuMemSyncQueriedButEnvNotGpuAccelerated();
 void error_gpuUnexpectedlyInaccessible();
 
 void error_gpuDeadCopyMatrixFunctionCalled();
+
+void error_gpuDenseMatrixConjugatedAndTransposed();
 
 void assert_gpuIsAccessible();
 
