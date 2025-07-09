@@ -9,6 +9,7 @@
  * 
  * @author Tyson Jones
  * @author Oliver Brown (OpenMP 'if' clauses)
+ * @author Luc Jaulmes (optimised initUniformState)
  * @author Richard Meister (helped patch on LLVM)
  * @author Kshitij Chhabra (patched v3 clauses with gcc9)
  * @author Ania (Anna) Brown (developed QuEST v1 logic)
@@ -907,7 +908,7 @@ void cpu_statevector_anyCtrlPauliTensorOrGadget_subA(
     // whenever each thread has at least 1 iteration for itself. And of course
     // we serialise both inner and outer loops when qureg multithreading is off.
 
-    if (!qureg.isMultithreaded || numOuterIts >= cpu_getCurrentNumThreads()) {
+    if (!qureg.isMultithreaded || numOuterIts >= cpu_getAvailableNumThreads()) {
     
         // parallel
         #pragma omp parallel for if(qureg.isMultithreaded)
@@ -2389,9 +2390,20 @@ INSTANTIATE_FUNC_OPTIMISED_FOR_NUM_TARGS( void, cpu_densmatr_multiQubitProjector
 
 void cpu_statevec_initUniformState_sub(Qureg qureg, qcomp amp) {
 
-    // faster on average (though perhaps not for large quregs)
-    // than a custom multithreaded loop
-    std::fill(qureg.cpuAmps, qureg.cpuAmps + qureg.numAmpsPerNode, amp);
+    // approx-uniformly distribute modified memory pages across threads,
+    // in the hope that each std::fill() will touch only memory within 
+    // the thread's corresponding NUMA node, for best performance 
+
+    int numAmpsPerPage = cpu_getPageSize() / sizeof(qcomp); // divides evenly
+
+    #pragma omp parallel if(qureg.isMultithreaded)
+    {
+        const auto [start, end] = util_getBlockMultipleSubRange(
+            qureg.numAmpsPerNode, numAmpsPerPage,
+            cpu_getOpenmpThreadInd(), cpu_getCurrentNumThreads());
+
+        std::fill(qureg.cpuAmps + start, qureg.cpuAmps + end, amp);
+    }
 }
 
 

@@ -21,6 +21,7 @@
 
 #include <type_traits>
 #include <functional>
+#include <utility>
 #include <string>
 #include <vector>
 #include <array>
@@ -351,6 +352,8 @@ bool util_areAnyVectorElemsWithinNode(int rank, qindex numElemsPerNode, qindex s
 
 util_VectorIndexRange util_getLocalIndRangeOfVectorElemsWithinNode(int rank, qindex numElemsPerNode, qindex elemStartInd, qindex numInds);
 
+std::pair<qindex, qindex> util_getBlockMultipleSubRange(qindex rangeLen, qindex blockLen, int idSubRange, int numSubRanges);
+
 
 
 /*
@@ -359,6 +362,7 @@ util_VectorIndexRange util_getLocalIndRangeOfVectorElemsWithinNode(int rank, qin
 
 qreal util_getPhaseFromGateAngle(qreal angle);
 qcomp util_getPhaseFromGateAngle(qcomp angle);
+
 
 
 /*
