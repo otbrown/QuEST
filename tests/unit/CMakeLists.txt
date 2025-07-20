@@ -13,5 +13,6 @@ target_sources(tests
   operations.cpp
   paulis.cpp
   qureg.cpp
+  trotterisation.cpp
   types.cpp
 )
