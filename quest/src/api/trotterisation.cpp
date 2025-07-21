@@ -68,11 +68,11 @@ void internal_applyHigherOrderTrotterRepetition(
         qcomp b = (1-4*p) * angle;
 
         int lower = order - 2;
-        internal_applyFirstOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower);
-        internal_applyFirstOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower);
-        internal_applyFirstOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, b, lower);
-        internal_applyFirstOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower);
-        internal_applyFirstOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower);
+        internal_applyHigherOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower); // angle -> a
+        internal_applyHigherOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower);
+        internal_applyHigherOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, b, lower); // angle -> b
+        internal_applyHigherOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower);
+        internal_applyHigherOrderTrotterRepetition(qureg, ketCtrls, braCtrls, states, sum, a, lower);
     }
 }
 
