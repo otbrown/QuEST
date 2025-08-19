@@ -20,6 +20,7 @@
 #include "quest/src/comm/comm_routines.hpp"
 
 #include <iostream>
+#include <utility>
 #include <vector>
 #include <string>
 #include <array>
@@ -87,7 +88,7 @@ void freeAllMemoryIfAnyAllocsFailed(PauliStrSum sum) {
 
 
 /*
- * INTERNAL UTILITIES
+ * INTERNAL PauliStr UTILITIES
  *
  * callable by other internal files but which are not exposed in the header
  * because we do not wish to make them visible to users. Ergo other internal
@@ -139,12 +140,6 @@ int paulis_getIndOfLefmostNonIdentityPauli(PauliStr* strings, qindex numStrings)
 }
 
 
-int paulis_getIndOfLefmostNonIdentityPauli(PauliStrSum sum) {
-
-    return paulis_getIndOfLefmostNonIdentityPauli(sum.strings, sum.numTerms);
-}
-
-
 bool paulis_containsXOrY(PauliStr str) {
 
     int maxInd = paulis_getIndOfLefmostNonIdentityPauli(str);
@@ -160,16 +155,6 @@ bool paulis_containsXOrY(PauliStr str) {
 }
 
 
-bool paulis_containsXOrY(PauliStrSum sum) {
-
-    for (qindex i=0; i<sum.numTerms; i++)
-        if (paulis_containsXOrY(sum.strings[i]))
-            return true;
-
-    return false;
-}
-
-
 bool paulis_hasOddNumY(PauliStr str) {
 
     bool odd = false;
@@ -179,6 +164,13 @@ bool paulis_hasOddNumY(PauliStr str) {
             odd = !odd;
 
     return odd;
+}
+
+
+int paulis_getSignOfPauliStrConj(PauliStr str) {
+
+    // conj(Y) = -Y, conj(YY) = YY
+    return paulis_hasOddNumY(str)? -1 : 1;
 }
 
 
@@ -239,7 +231,7 @@ qindex paulis_getTargetBitMask(PauliStr str) {
 }
 
 
-array<vector<int>,3> paulis_getSeparateInds(PauliStr str, Qureg qureg) {
+array<vector<int>,3> paulis_getSeparateInds(PauliStr str) {
 
     vector<int> iXYZ = paulis_getTargetInds(str);
     vector<int> iX, iY, iZ;
@@ -279,15 +271,22 @@ PauliStr paulis_getShiftedPauliStr(PauliStr str, int pauliShift) {
 }
 
 
-PauliStr paulis_getKetAndBraPauliStr(PauliStr str, Qureg qureg) {
+PauliStr paulis_getTensorProdOfPauliStr(PauliStr left, PauliStr right, int numQubits) {
 
-    PauliStr shifted = paulis_getShiftedPauliStr(str, qureg.numQubits);
-    
+    // computes left (tensor) right, assuming right is smaller than numQubits
+    PauliStr shifted = paulis_getShiftedPauliStr(left, numQubits);
+
     // return a new stack PauliStr instance (avoiding C++20 initialiser)
     PauliStr out;
-    out.lowPaulis  = str.lowPaulis  | shifted.lowPaulis;
-    out.highPaulis = str.highPaulis | shifted.highPaulis;
+    out.lowPaulis  = right.lowPaulis  | shifted.lowPaulis;
+    out.highPaulis = right.highPaulis | shifted.highPaulis;
     return out;
+}
+
+
+PauliStr paulis_getKetAndBraPauliStr(PauliStr str, Qureg qureg) {
+
+    return paulis_getTensorProdOfPauliStr(str, str, qureg.numQubits);
 }
 
 
@@ -312,6 +311,54 @@ PAULI_MASK_TYPE paulis_getKeyOfSameMixedAmpsGroup(PauliStr str) {
 }
 
 
+std::pair<qcomp,PauliStr> paulis_getPauliStrProd(PauliStr strA, PauliStr strB) {
+
+    // a . b = coeff * (a ^ b)
+    PauliStr strOut;
+    strOut.lowPaulis  = strA.lowPaulis  ^ strB.lowPaulis;
+    strOut.highPaulis = strA.highPaulis ^ strB.highPaulis;
+
+    // coeff = product of single-site product coeffs
+    qcomp coeff = 1;
+    for (int i=0; i<MAX_NUM_PAULIS_PER_STR; i++) {
+        int pA = paulis_getPauliAt(strA, i);
+        int pB = paulis_getPauliAt(strB, i);
+        
+        // I.P = P.I = P and P.P = I contribute factor=1
+        if (pA == 0 || pB == 0 || pA == pB)
+            continue;
+
+        // XY,YZ,ZX=i, XZ,YX,ZY=-i
+        int dif = pB - pA;
+        coeff *= qcomp(0, (dif == 1 || dif == -2)? 1 : -1);
+    }
+    
+    return {coeff, strOut};
+}
+
+
+
+/*
+ * INTERNAL PauliStrSum UTILITIES
+ */
+
+
+int paulis_getIndOfLefmostNonIdentityPauli(PauliStrSum sum) {
+
+    return paulis_getIndOfLefmostNonIdentityPauli(sum.strings, sum.numTerms);
+}
+
+
+bool paulis_containsXOrY(PauliStrSum sum) {
+
+    for (qindex i=0; i<sum.numTerms; i++)
+        if (paulis_containsXOrY(sum.strings[i]))
+            return true;
+
+    return false;
+}
+
+
 qindex paulis_getTargetBitMask(PauliStrSum sum) {
 
     qindex mask = 0;
@@ -321,6 +368,87 @@ qindex paulis_getTargetBitMask(PauliStrSum sum) {
         mask |= paulis_getTargetBitMask(sum.strings[t]);
 
     return mask;
+}
+
+
+void paulis_setPauliStrSumToScaledTensorProdOfConjWithSelf(PauliStrSum out, qreal factor, PauliStrSum in, int numQubits) {
+
+    // sets out = factor * conj(in) (x) in, where in has dim of numQubits
+    if (paulis_getIndOfLefmostNonIdentityPauli(in) >= numQubits)
+        error_pauliStrSumHasMoreQubitsThanSpecifiedInTensorProd();
+    if (out.numTerms != in.numTerms * in.numTerms)
+        error_pauliStrSumTensorProdHasIncorrectNumTerms();
+
+    // conj(in) (x) in = sum_jk conj(c_j) c_k conj(P_j) (x) P_k...
+    qindex i = 0;
+    for (qindex j=0; j<in.numTerms; j++) {
+        for (qindex k=0; k<in.numTerms; k++) {
+
+            // ... where conj(P_j) = sign_j P_j
+            out.strings[i] = paulis_getTensorProdOfPauliStr(in.strings[j], in.strings[k], numQubits);
+            out.coeffs[i] = factor * std::conj(in.coeffs[j]) * in.coeffs[k] * paulis_getSignOfPauliStrConj(in.strings[j]);
+            i++;
+        }
+    }
+}
+
+
+qindex paulis_getNumTermsInPauliStrSumProdOfAdjointWithSelf(PauliStrSum in) {
+
+    // adj(in).in has fewer terms than the numTerms^2 bound, since 
+    // a.a = I (causing -n and +1 below) and a.b ~ b.a (causing /2);
+    // we do not however consider any cancellations of coefficients
+    int n = in.numTerms;
+    return 1 + (n*n - n)/2;
+}
+
+
+void paulis_setPauliStrSumToScaledProdOfAdjointWithSelf(PauliStrSum out, qreal factor, PauliStrSum in) {
+
+    // sets out = factor * adj(in) . in, permitting duplicate strings
+    if (out.numTerms != paulis_getNumTermsInPauliStrSumProdOfAdjointWithSelf(in))
+        error_pauliStrSumProdHasIncorrectNumTerms();
+
+    // since out definitely contains an identity (when neglecting coeff cancellation)
+    // which is contributed toward by all j=k iterations below, we keep it at i=0
+    out.strings[0] = getPauliStr("I");
+    out.coeffs[0] = 0;
+    qindex i = 1;
+
+    // we leverage that sum_jk a_j^* a_k P_j P_k...
+    for (qindex j=0; j<in.numTerms; j++) {
+
+        // = sum_j ( |a_j|^2 Id + sum_k<j ...)
+        out.coeffs[0] += factor * std::norm(in.coeffs[j]);
+
+        // containing sum_k<j (a_j^* a_k P_j P_k + a_k^* a_j P_k P_j)
+        for (qindex k=0; k<j; k++) {
+
+            // = (a_j^* a_k b_jk + a_k^* a_j b_jk^*) P'
+            auto [coeff, str] = paulis_getPauliStrProd(in.strings[j], in.strings[k]);
+
+            // = (x + x^*) P' = 2 Re[x] P'
+            out.strings[i] = str;
+            out.coeffs[i] = factor * 2 * std::real(std::conj(in.coeffs[j]) * in.coeffs[k] * coeff);
+            i++;
+        }
+    }
+}
+
+
+void paulis_setPauliStrSumToShiftedConj(PauliStrSum out, PauliStrSum in, int numQubits) {
+
+    // sets out = conj(in) (x) I
+    if (paulis_getIndOfLefmostNonIdentityPauli(in) >= numQubits)
+        error_pauliStrSumHasMoreQubitsThanSpecifiedInConjShift();
+    if (out.numTerms != in.numTerms)
+        error_pauliStrSumConjHasIncorrectNumTerms();
+
+    // where conj(c P) = conj(c) sign P
+    for (qindex i=0; i<out.numTerms; i++) {
+        out.strings[i] = paulis_getShiftedPauliStr(in.strings[i], numQubits);
+        out.coeffs[i] = std::conj(in.coeffs[i]) * paulis_getSignOfPauliStrConj(in.strings[i]);
+    }
 }
 
 

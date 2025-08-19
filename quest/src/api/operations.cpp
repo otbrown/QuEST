@@ -30,8 +30,9 @@ using std::vector;
  * PRVIATE UTILITIES
  */
 
+extern int paulis_getSignOfPauliStrConj(PauliStr str);
+
 extern bool paulis_isIdentity(PauliStr str);
-extern bool paulis_hasOddNumY(PauliStr str);
 extern PauliStr paulis_getShiftedPauliStr(PauliStr str, int pauliShift);
 extern PauliStr paulis_getKetAndBraPauliStr(PauliStr str, Qureg qureg);
 
@@ -966,7 +967,7 @@ void applyMultiStateControlledPauliStr(Qureg qureg, int* controls, int* states, 
     // operation sinto a single tensor, i.e. +- (shift(str) (x) str), to 
     // avoid superfluous re-enumeration of the state
     if (qureg.isDensityMatrix && numControls == 0) {
-        factor = paulis_hasOddNumY(str)? -1 : 1;
+        factor = paulis_getSignOfPauliStrConj(str);
         ctrlVec = util_getConcatenated(ctrlVec, util_getBraQubits(ctrlVec, qureg));
         stateVec = util_getConcatenated(stateVec, stateVec); 
         str = paulis_getKetAndBraPauliStr(str, qureg);
@@ -976,7 +977,7 @@ void applyMultiStateControlledPauliStr(Qureg qureg, int* controls, int* states, 
 
     // but density-matrix control qubits require two distinct operations
     if (qureg.isDensityMatrix && numControls > 0) {
-        factor = paulis_hasOddNumY(str)? -1 : 1;
+        factor = paulis_getSignOfPauliStrConj(str);
         ctrlVec = util_getBraQubits(ctrlVec, qureg);
         str = paulis_getShiftedPauliStr(str, qureg.numQubits);
         localiser_statevec_anyCtrlPauliTensor(qureg, ctrlVec, stateVec, str, factor);
@@ -1230,8 +1231,8 @@ void applyNonUnitaryPauliGadget(Qureg qureg, PauliStr str, qcomp angle) {
     if (!qureg.isDensityMatrix)
         return;
 
-    // conj(e^i(a)XZ) = e^(-i conj(a)XZ) but conj(Y)=-Y, so odd-Y undoes phase negation
-    phase = std::conj(phase) * (paulis_hasOddNumY(str) ? 1 : -1);
+    // conj(e^i(a)P) = e^(-i s conj(a) P)
+    phase = - std::conj(phase) * paulis_getSignOfPauliStrConj(str);
     str = paulis_getShiftedPauliStr(str, qureg.numQubits);
     localiser_statevec_anyCtrlPauliGadget(qureg, {}, {}, str, phase);
 }
@@ -1273,8 +1274,8 @@ void applyMultiStateControlledPauliGadget(Qureg qureg, int* controls, int* state
     if (!qureg.isDensityMatrix)
         return;
 
-    // conj(e^iXZ) = e^(-iXZ), but conj(Y)=-Y, so odd-Y undoes phase negation
-    phase *= paulis_hasOddNumY(str) ? 1 : -1;
+    // conj(e^(i a P)) = e^(-i s a P)
+    phase *= - paulis_getSignOfPauliStrConj(str);
     ctrlVec = util_getBraQubits(ctrlVec, qureg);
     str = paulis_getShiftedPauliStr(str, qureg.numQubits);
     localiser_statevec_anyCtrlPauliGadget(qureg, ctrlVec, stateVec, str, phase);

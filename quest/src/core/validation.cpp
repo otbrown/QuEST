@@ -693,6 +693,9 @@ namespace report {
     string NEW_PAULI_STR_SUM_DIFFERENT_NUM_STRINGS_AND_COEFFS =
         "Given a different number of Pauli strings (${NUM_STRS}) and coefficients ${NUM_COEFFS}.";
 
+    string NEW_PAULI_STR_SUM_CANNOT_FIT_INTO_CPU_MEM =
+        "A PauliStrSum containing ${NUM_TERMS} terms cannot fit in the available RAM of ${NUM_BYTES} bytes.";
+
     string NEW_PAULI_STR_SUM_STRINGS_ALLOC_FAILED = 
         "Attempted allocation of the PauliStrSum's ${NUM_TERMS}-term array of Pauli strings (${NUM_BYTES} bytes total) unexpectedly failed.";
 
@@ -874,11 +877,32 @@ namespace report {
         "Cannot perform this ${NUM_TARGS}-target operation upon a ${NUM_QUREG_QUBITS}-qubit density-matrix distributed between ${NUM_NODES} nodes, since each node's communication buffer (with capacity for ${NUM_QUREG_AMPS_PER_NODE} amps) cannot simultaneously store the ${NUM_TARG_AMPS} mixed remote amplitudes.";
 
 
+    /*
+    * TROTTERISATION PARAMETERS
+    */
+
     string INVALID_TROTTER_ORDER =
         "Invalid Trotter order (${ORDER}). The order parameter must be positive and even, or unity.";
 
     string INVALID_TROTTER_REPS =
         "Invalid number of Trotter repetitions (${REPS}). The number of repetitions must be positive.";
+
+
+    /*
+    * TIME EVOLUTION PARAMETERS
+    */
+
+    string NEGATIVE_NUM_LINDBLAD_JUMP_OPS =
+        "The number of jump operators must be zero or positive.";
+
+    string NEGATIVE_LINDBLAD_DAMPING_RATE = 
+        "One or more damping rates were negative, beyond the tolerance set by the validation epsilon.";
+
+    string NUM_LINDBLAD_SUPER_PROPAGATOR_TERMS_OVERFLOWED =
+        "The given Hamiltonian and jump operators suggest a Lindbladian superpropagator with more weighted Pauli strings than can be stored in a qindex type.";
+
+    string NEW_LINDBLAD_SUPER_PROPAGATOR_CANNOT_FIT_INTO_CPU_MEM =
+        "The Lindbladian superpropagator would contain ${NUM_TERMS} weighted Pauli strings and exceed the available RAM of ${NUM_BYTES} bytes.";
 
 
     /*
@@ -3190,14 +3214,25 @@ void validate_controlAndPauliStrTargets(Qureg qureg, int ctrl, PauliStr str, con
 
 void validate_newPauliStrSumParams(qindex numTerms, const char* caller) {
 
-    // note we do not bother checking whether RAM has enough memory to contain
-    // the new Pauli sum, because the caller to this function has already
-    // been passed data of the same size (and it's unlikely the user is about
-    // to max RAM), and the memory requirements scale only linearly with the
-    // parameters (e.g. numTerms), unlike the exponential scaling of the memory
-    // of Qureg and CompMatr, for example
-
     assertThat(numTerms > 0, report::NEW_PAULI_STR_SUM_NON_POSITIVE_NUM_STRINGS, {{"${NUM_TERMS}", numTerms}}, caller);
+
+    // attempt to fetch RAM, and simply return if we fail; if we unknowingly
+    // didn't have enough RAM, then alloc validation will trigger later
+    size_t memPerNode = 0;
+    try {
+        memPerNode = mem_tryGetLocalRamCapacityInBytes();
+    } catch(mem::COULD_NOT_QUERY_RAM e) {
+        return;
+    }
+
+    // pedantically check whether the PauliStrSum fits in memory. This seems
+    // ridiculous/pointless because the user is expected to have already prepared
+    // data of an equivalent size (which is passed), but checking means we catch
+    // when the user has passed an erroneous 'numTerms' which is way too large,
+    // avoiding a seg fault
+
+    bool fits = mem_canPauliStrSumFitInMemory(numTerms, memPerNode);
+    assertThat(fits, report::NEW_PAULI_STR_SUM_CANNOT_FIT_INTO_CPU_MEM, {{"${NUM_TERMS}", numTerms}, {"${NUM_BYTES}", memPerNode}}, caller);
 }
 
 void validate_newPauliStrSumMatchingListLens(qindex numStrs, qindex numCoeffs, const char* caller) {
@@ -3751,11 +3786,72 @@ void validate_mixedAmpsFitInNode(Qureg qureg, int numTargets, const char* caller
     assertThat(qureg.numAmpsPerNode >= numTargAmps, msg, vars, caller);
 }
 
+
+
+/*
+ * TROTTERISATION PARAMETERS
+ */
+
 void validate_trotterParams(Qureg qureg, int order, int reps, const char* caller) {
 
     bool isEven = (order % 2) == 0;
     assertThat(order > 0 && (isEven || order==1), report::INVALID_TROTTER_ORDER, {{"${ORDER}", order}}, caller);
     assertThat(reps > 0, report::INVALID_TROTTER_REPS, {{"${REPS}", reps}}, caller);
+}
+
+
+
+/*
+ * TIME EVOLUTION PARAMETERS
+ */
+
+void validate_lindbladJumpOps(PauliStrSum* jumps, int numJumps, Qureg qureg, const char* caller) {
+
+    assertThat(numJumps >= 0, report::NEGATIVE_NUM_LINDBLAD_JUMP_OPS, caller);
+
+    // @todo
+    // these error messages report as if each jump operator was "the" PauliStrSum
+    // to a function expecting one, and should be tailored to them being "a" jump op
+    for (int n=0; n<numJumps; n++) {
+        validate_pauliStrSumFields(jumps[n], caller);
+        validate_pauliStrSumTargets(jumps[n], qureg, caller);
+    }
+
+    // separate validation checks whether there is sufficient memory to translate 
+    // all jump operators into terms of a super-propagator (and guards overflow)
+}
+
+void validate_lindbladDampingRates(qreal* damps, int numJumps, const char* caller) {
+
+    // possibly repeated from jump op validation, for safety
+    assertThat(numJumps >= 0, report::NEGATIVE_NUM_LINDBLAD_JUMP_OPS, caller);
+
+    if (isNumericalValidationDisabled())
+        return;
+
+    // in lieu of asserting positivity, we somewhat unusually permit small negative
+    // damping rates just for consistency with other numerical validation tolerances
+    for (int n=0; n<numJumps; n++)
+        assertThat(damps[n] >= - global_validationEpsilon, report::NEGATIVE_LINDBLAD_DAMPING_RATE, caller);
+}
+
+void validate_numLindbladSuperPropagatorTerms(qindex numSuperTerms, const char* caller) {
+
+    assertThat(numSuperTerms != 0, report::NUM_LINDBLAD_SUPER_PROPAGATOR_TERMS_OVERFLOWED, caller);
+
+    // attempt to fetch RAM, and simply return if we fail; if we unknowingly
+    // didn't have enough RAM, then alloc validation will trigger later
+    size_t memPerNode = 0;
+    try {
+        memPerNode = mem_tryGetLocalRamCapacityInBytes();
+    } catch(mem::COULD_NOT_QUERY_RAM e) {
+        return;
+    }
+
+    // check whether the superpropagator fits in memory
+    bool fits = mem_canPauliStrSumFitInMemory(numSuperTerms, memPerNode);
+    assertThat(fits, report::NEW_LINDBLAD_SUPER_PROPAGATOR_CANNOT_FIT_INTO_CPU_MEM, {{"${NUM_TERMS}", numSuperTerms}, {"${NUM_BYTES}", memPerNode}}, caller);
+
 }
 
 
