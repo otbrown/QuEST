@@ -147,7 +147,7 @@ qindex internal_getNumTotalSuperPropagatorTerms(PauliStrSum hamil, PauliStrSum* 
 
 extern "C" {
 
-void applyNonUnitaryTrotterizedPauliStrSumGadget(Qureg qureg, PauliStrSum sum, qcomp angle, int order, int reps) {
+void applyTrotterizedNonUnitaryPauliStrSumGadget(Qureg qureg, PauliStrSum sum, qcomp angle, int order, int reps) {
     validate_quregFields(qureg, __func__);
     validate_pauliStrSumFields(sum, __func__);
     validate_pauliStrSumTargets(sum, qureg, __func__);
@@ -170,7 +170,7 @@ void applyTrotterizedPauliStrSumGadget(Qureg qureg, PauliStrSum sum, qreal angle
     internal_applyAllTrotterRepetitions(qureg, nullptr, nullptr, 0, sum, angle, order, reps, onlyLeftApply);
 }
 
-void applyControlledTrotterizedPauliStrSumGadget(Qureg qureg, int control, PauliStrSum sum, qreal angle, int order, int reps) {
+void applyTrotterizedControlledPauliStrSumGadget(Qureg qureg, int control, PauliStrSum sum, qreal angle, int order, int reps) {
     validate_quregFields(qureg, __func__);
     validate_pauliStrSumFields(sum, __func__);
     validate_pauliStrSumIsHermitian(sum, __func__);
@@ -181,7 +181,7 @@ void applyControlledTrotterizedPauliStrSumGadget(Qureg qureg, int control, Pauli
     internal_applyAllTrotterRepetitions(qureg, &control, nullptr, 1, sum, angle, order, reps, onlyLeftApply);
 }
 
-void applyMultiControlledTrotterizedPauliStrSumGadget(Qureg qureg, int* controls, int numControls, PauliStrSum sum, qreal angle, int order, int reps) {
+void applyTrotterizedMultiControlledPauliStrSumGadget(Qureg qureg, int* controls, int numControls, PauliStrSum sum, qreal angle, int order, int reps) {
     validate_quregFields(qureg, __func__);
     validate_pauliStrSumFields(sum, __func__);
     validate_pauliStrSumIsHermitian(sum, __func__);
@@ -192,7 +192,7 @@ void applyMultiControlledTrotterizedPauliStrSumGadget(Qureg qureg, int* controls
     internal_applyAllTrotterRepetitions(qureg, controls, nullptr, numControls, sum, angle, order, reps, onlyLeftApply);
 }
 
-void applyMultiStateControlledTrotterizedPauliStrSumGadget(Qureg qureg, int* controls, int* states, int numControls, PauliStrSum sum, qreal angle, int order, int reps) {
+void applyTrotterizedMultiStateControlledPauliStrSumGadget(Qureg qureg, int* controls, int* states, int numControls, PauliStrSum sum, qreal angle, int order, int reps) {
     validate_quregFields(qureg, __func__);
     validate_pauliStrSumFields(sum, __func__);
     validate_pauliStrSumIsHermitian(sum, __func__);
@@ -206,15 +206,15 @@ void applyMultiStateControlledTrotterizedPauliStrSumGadget(Qureg qureg, int* con
 
 } // end de-mangler
 
-void applyMultiControlledTrotterizedPauliStrSumGadget(Qureg qureg, vector<int> controls, PauliStrSum sum, qreal angle, int order, int reps) {
+void applyTrotterizedMultiControlledPauliStrSumGadget(Qureg qureg, vector<int> controls, PauliStrSum sum, qreal angle, int order, int reps) {
 
-    applyMultiControlledTrotterizedPauliStrSumGadget(qureg, controls.data(), controls.size(), sum, angle, order, reps);
+    applyTrotterizedMultiControlledPauliStrSumGadget(qureg, controls.data(), controls.size(), sum, angle, order, reps);
 }
 
-void applyMultiStateControlledTrotterizedPauliStrSumGadget(Qureg qureg, vector<int> controls, vector<int> states, PauliStrSum sum, qreal angle, int order, int reps) {
+void applyTrotterizedMultiStateControlledPauliStrSumGadget(Qureg qureg, vector<int> controls, vector<int> states, PauliStrSum sum, qreal angle, int order, int reps) {
     validate_controlsMatchStates(controls.size(), states.size(), __func__);
 
-    applyMultiStateControlledTrotterizedPauliStrSumGadget(qureg, controls.data(), states.data(), controls.size(), sum, angle, order, reps);
+    applyTrotterizedMultiStateControlledPauliStrSumGadget(qureg, controls.data(), states.data(), controls.size(), sum, angle, order, reps);
 }
 
 
