@@ -3994,6 +3994,9 @@ void validate_quregCanBeWorkspace(Qureg qureg, Qureg workspace, const char* call
     assertThat(
         doQuregsHaveIdenticalMemoryLayouts(qureg, workspace),
         report::QUREG_IS_INCOMPATIBLE_WITH_WORKSPACE, caller);
+
+    // @todo
+    // check whether any of their memories overlap, which is forbidden
 }
 
 void validate_numQuregsInSum(int numQuregs, const char* caller) {
