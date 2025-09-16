@@ -2,6 +2,12 @@
  * CPU OpenMP-accelerated definitions of the main backend simulation routines,
  * as mirrored by gpu_subroutines.cpp, and called by accelerator.cpp. 
  * 
+ * BEWARE that this specific file receives additional compiler optimisation flags
+ * in order to counteract a performance issue in the use of std::complex operator
+ * overloads. These flags (like -Ofast) may induce assumed associativity of qcomp
+ * algebra, breaking techniques like Kahan summation. As such, this file CANNOT
+ * assume IEEE floating-point behaviour.
+ * 
  * Some of these definitions are templated, defining multiple versions optimised 
  * (at compile-time) for handling different numbers of input qubits; such functions
  * are proceeded by macro INSTANTIATE_FUNC_OPTIMISED_FOR_NUM_CTRLS(), to force the 
@@ -38,6 +44,28 @@
 #include <algorithm>
 
 using std::vector;
+
+
+/*
+ * Beware that this file makes extensive use of std::complex (qcomp) operator
+ * overloads and so requires additional compiler flags to achieve hand-rolled
+ * arithmetic performance; otherwise a 3-50x slowdown may be observed. We here
+ * enforce that these flags were not forgotton (but may be deliberatedly avoided).
+ * Beware these flags may induce associativity and break e.g. Kakan summation.
+ */
+
+#if !defined(COMPLEX_OVERLOADS_PATCHED)
+    #error "Crucial, bespoke optimisation flags were not passed (or acknowledged) to cpu_subroutines.cpp which are necessary for full complex arithmetic performance."
+    
+#elif !COMPLEX_OVERLOADS_PATCHED
+
+    #if defined(_MSC_VER)
+        #pragma message("Warning: The CPU backend is being deliberately compiled without the necessary flags to obtain full complex arithmetic performance.")
+    #else
+        #warning "The CPU backend is being deliberately compiled without the necessary flags to obtain full complex arithmetic performance."
+    #endif
+
+#endif
 
 
 
@@ -568,6 +596,9 @@ void cpu_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, ve
                     /// qureg.cpuAmps[i] is being serially updated by only this thread,
                     /// so is a candidate for Kahan summation for improved numerical
                     /// stability. Explore whether this is time-free and worthwhile!
+                    ///
+                    /// BEWARE that Kahan summation is incompatible with the optimisation
+                    /// flags currently passed to this file
                 }
             }
         }
@@ -1758,6 +1789,9 @@ qreal cpu_statevec_calcTotalProb_sub(Qureg qureg) {
     /// final serial combination). This invokes several times
     /// as many arithmetic operations (4x?) but we are anyway
     /// memory-bandwidth bound
+    ///
+    /// BEWARE that Kahan summation is incompatible with the optimisation
+    /// flags currently passed to this file
 
     qreal prob = 0;
 
@@ -1783,6 +1817,9 @@ qreal cpu_densmatr_calcTotalProb_sub(Qureg qureg) {
     /// final serial combination). This invokes several times
     /// as many arithmetic operations (4x?) but we are anyway
     /// memory-bandwidth bound
+    ///
+    /// BEWARE that Kahan summation is incompatible with the optimisation
+    /// flags currently passed to this file
 
     qreal prob = 0;
 
