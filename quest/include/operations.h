@@ -69,6 +69,7 @@ digraph {
  * @enddot
  * 
  * @formulae
+ * 
  * Let @f$ \hat{U} = @f$ @p matrix, @f$ t = @f$ @p target, and let @f$\hat{U}_t@f$
  * notate operating @f$\hat{U}@f$ upon the @f$ t @f$-th qubit among@f$ N @f$, i.e.
  * @f[ 
@@ -85,9 +86,10 @@ digraph {
  *   @f]
  *
  * @constraints
+ * 
  * - Unitarity of @f$ \hat{U} = @f$ @p matrix requires that 
  *   @f$ \hat{U} \hat{U}^\dagger = \id @f$. Validation will check that @p matrix is
- *   approximately unitarity via
+ *   approximately unitary via
  *   @f[ 
         \max\limits_{ij} \Big|\left(\hat{U} \hat{U}^\dagger - \id\right)_{ij}\Big|^2 \le \valeps
  *   @f]
@@ -125,9 +127,7 @@ digraph {
 void applyCompMatr1(Qureg qureg, int target, CompMatr1 matrix);
 
 
-/** @notyetdoced
- * 
- * Applies a singly-controlled one-qubit dense unitary @p matrix to the specified 
+/** Applies a singly-controlled one-qubit dense unitary @p matrix to the specified 
  * @p target qubit of @p qureg.
  * 
  * @diagram
@@ -156,8 +156,84 @@ digraph {
 }
  * @enddot
  *
+ * @formulae
+ * 
+ * Let @f$ \hat{U} = @f$ @p matrix, @f$ t = @f$ @p target, @f$ c = @f$ @p control,
+ * and let @f$\hat{O}_q@f$ denote an operator upon the @f$q@f$-th qubit.
+ * This function effects operator
+ * @f[
+    C_c[\hat{U}_t] = \ketbra{0}{0}_c \otimes \id_t + \ketbra{1}{1}_c \otimes \hat{U}_t,
+ * @f]
+ * where @f$\hat{U}@f$ is effected upon basis states for which qubit @f$c@f$ has value `1`.
+ * For illustration, when @p control=0 and @p target=1, this function would effect
+ * @f[
+    C_1[\hat{U}_0] \equiv 
+    \begin{pmatrix} 
+      1 \\ & 1 \\ & & u_{00} & u_{01} \\ & & u_{10} & u_{11}
+    \end{pmatrix}.
+ * @f]
+ *
+ * This operation can be performed upon statevectors and density matrices.
+ *
+ * - When @p qureg is a statevector @f$ \svpsi @f$, this function effects
+ *   @f[ 
+        \svpsi \rightarrow C_c[\hat{U}_t] \, \svpsi.
+ *   @f]
+ * - When @p qureg is a density matrix @f$\dmrho@f$, this function effects
+ *   @f[ 
+        \dmrho \rightarrow C_c[\hat{U}_t] \, \dmrho \, {C_c[\hat{U}_t]}^\dagger.
+ *   @f]
+ *
+ * @constraints
+ * 
+ * - Unitarity of @f$ \hat{U} = @f$ @p matrix requires that 
+ *   @f$ \hat{U} \hat{U}^\dagger = \id @f$. Validation will check that @p matrix is
+ *   approximately unitary via
+ *   @f[ 
+        \max\limits_{ij} \Big|\left(\hat{U} \hat{U}^\dagger - \id\right)_{ij}\Big|^2 \le \valeps
+ *   @f]
+ *   where the validation epsilon @f$ \valeps @f$ can be adjusted with setValidationEpsilon().
+ *
+ * @equivalences
+ * 
+ * - This function is faster than, but mathematically equivalent to, initialising a two-qubit
+ *   matrix (CompMatr2) to the @f$C_1[\hat{U}_0]@f$ matrix above, and calling applyCompMatr2():
+ *   ```
+     CompMatr2 m = getInlineCompMatr2({
+         {1,0,0,0}, 
+         {0,1,0,0}, 
+         {0,0,u00,u01}, 
+         {0,0,u10,u11}});
+     
+     applyCompMatr2(qureg, target, control);
+ *   ```
+ *
+ * @myexample
+ * ```
+    Qureg qureg = createQureg(5);
+
+    CompMatr1 matrix = getInlineCompMatr1({
+        {-1i/sqrt(2), 1i/sqrt(2)},
+        {(1i-1)/2,    (1i-1)/2}
+    });
+
+    // C_0[U_2]
+    applyControlledCompMatr1(qureg, 0, 2, matrix); 
+ * ```
+
+ * @param[in,out] qureg   the state to modify.
+ * @param[in]     control the index of the control qubit.
+ * @param[in]     target  the index of the target qubit.
+ * @param[in]     matrix  the Z-basis unitary matrix to effect.
+ * @throws @validationerror
+ * - if @p qureg or @p matrix are uninitialised.
+ * - if @p matrix is not approximately unitary.
+ * - if @p control or @p target are an invalid qubit index.
+ * - if @p control and @p target overlap.
  * @see
- * - applyCompMatr1()
+ * - applyMultiControlledCompMatr1()
+ * - applyMultiStateControlledCompMatr1()
+ * @author Tyson Jones
  */
 void applyControlledCompMatr1(Qureg qureg, int control, int target, CompMatr1 matrix);
 
@@ -200,6 +276,24 @@ digraph {
   {rank=same; topWireR; midWireR; botWireR};
 }
  * @enddot
+ *
+ * @formulae
+ * 
+ * Let @f$ \vec{c} = @f$ @p controls, @f$ t = @f$ @p target, and @f$ \hat{U} = @f$ @p matrix.
+ * This functions effects operator
+ * 
+ * @f[
+    C_{\vec{c}}[\hat{U}_t]
+ * @f]
+ *
+ * which is equivalent to applying @f$ \hat{U}_t @f$ upon only the computational basis states for which 
+ * all control qubits are in the @f$ \ket{1} @f$ state.
+ *
+ * Precisely, let @f$n = 2^{|\vec{c}|}-1@f$. Then
+ * @f[
+    C_{\vec{c}}[\hat{U}_t] = \sum\limits_{i=0}^{n-1} \ketbra{i}{i}_{\vec{c}} \otimes \hat{\id}_t
+      + \ketbra{n}{n}_{\vec{c}} \otimes \hat{U}_t
+ * @f]
  *
  * @see
  * - applyCompMatr1()
@@ -506,11 +600,11 @@ extern "C" {
  * The qubits within @p targets are treated to be ordered least to most significant with respect
  * to @f$ M @f$. That is, if @f$ M @f$ was hypothetically separable single-qubit matrices
  * @f[
-      M \equiv A \otimes B \otimes C \otimes \dots 
+      M \equiv \dots \otimes C \otimes B \otimes A
  * @f]
  * then this function would effect
  * @f[
-      \hat{M}_{\text{targets}} \equiv A_{\text{targets}[0]} B_{\text{targets}[1]} C_{\text{targets}[2]} \dots
+      \hat{M}_{\text{targets}} \equiv A_{\text{targets}[0]} \cdot B_{\text{targets}[1]} \cdot C_{\text{targets}[2]} \cdot \dots
  * @f]
  *
  * @see
@@ -1345,6 +1439,7 @@ extern "C" {
  * upon the @p target qubit, where @f$ \hat{\sigma}_x @f$ is the Pauli X matrix.
  *
  * @equivalences
+ * 
  * - This function is entirely equivalent to calling applyPauliGadget() with a single-site PauliStr.
  *   ```
      applyPauliGadget(qureg, getInlinePauliStr("X", {target}), angle);
@@ -1383,6 +1478,7 @@ void applyRotateX(Qureg qureg, int target, qreal angle);
  * upon the @p target qubit, where @f$ \hat{\sigma}_y @f$ is the Pauli Y matrix.
  *
  * @equivalences
+ * 
  * - This function is entirely equivalent to calling applyPauliGadget() with a single-site PauliStr.
  *   ```
      applyPauliGadget(qureg, getInlinePauliStr("Y", {target}), angle);
@@ -1421,6 +1517,7 @@ void applyRotateY(Qureg qureg, int target, qreal angle);
  * upon the @p target qubit, where @f$ \hat{\sigma}_z @f$ is the Pauli Z matrix.
  *
  * @equivalences
+ * 
  * - This function is entirely equivalent to calling applyPauliGadget() with a single-site PauliStr.
  *   ```
      applyPauliGadget(qureg, getInlinePauliStr("Z", {target}), angle);
@@ -1528,6 +1625,7 @@ void applyMultiStateControlledRotateZ(Qureg qureg, int* controls, int* states, i
  * @f]
  *
  * @equivalences
+ * 
  * - Assuming @f$ \| \vec{n} \|_2 \ne 0 @f$, this function is agnostic to the normalisation
  *   of the axis vector.
  *   ```
@@ -1653,6 +1751,7 @@ extern "C" {
 /** @notyetdoced
  * 
  * @formulae
+ * 
  * Let @f$ \hat{\sigma} = @f$ @p str and @f$ \theta = @f$ @p angle. 
  * 
  * This function effects unitary
@@ -1663,6 +1762,7 @@ extern "C" {
  * Pauli. As such, this effects a multi-qubit rotation around an arbitrary Pauli string.
  * 
  * @equivalences
+ * 
  * - Because @f$ R_{\hat{\sigma}}(\theta) @f$ satisfies
  *   @f[
         R_{\hat{\sigma}}(\theta) \equiv 
@@ -1790,6 +1890,7 @@ extern "C" {
  * @f]
  *
  * @equivalences
+ * 
  * - This function is equivalent to calling applyPauliGadget() with a PauliStr containing only @f$ \hat{Z} @f$ and @f$ \id @f$.
  *   This latter function will actually automatically invoke applyPhaseGadget() which has an optimised implementation.
  * - This function is equivalent to, albeit much faster than, preparing a DiagMatr with @f$ \pm 1 @f$ elements (depending upon
@@ -1833,6 +1934,7 @@ void applyPhaseFlip(Qureg qureg, int target);
  * upon the @p target qubit.
  * 
  * @equivalences
+ * 
  * - This function is equivalent to, albeit much faster than, a Z-axis rotation with
  *   an adjustment to the global phase (which is redundant upon density matrices).
  *   @f[
@@ -1885,6 +1987,7 @@ digraph {
  * @enddot
  *
  * @equivalences
+ * 
  * - The target qubits are interchangeable, ergo
  *   ```
      applyTwoQubitPhaseFlip(qureg, target1, target2);
@@ -1945,6 +2048,7 @@ digraph {
  * @enddot
  *
  * @equivalences
+ * 
  * - The target qubits are interchangeable, ergo
  *   ```
      applyTwoQubitPhaseShift(qureg, target1, target2, angle);
@@ -1971,6 +2075,7 @@ void applyTwoQubitPhaseShift(Qureg qureg, int target1, int target2, qreal angle)
  * effected upon the target qubits.
  * 
  * @equivalences
+ * 
  * - The ordering of @p targets has no affect on the effected operation.
  * - This function is entirely equivalent to a multi-controlled Pauli-Z unitary (or a hypothetical
  *   many-controlled variant of applyPhaseFlip()) with all but one arbitrary target qubit becoming
@@ -2025,6 +2130,7 @@ digraph {
  * @enddot
  *
  * @equivalences
+ * 
  * - The ordering of @p targets has no affect on the effected operation.
  * - This function is equivalent to a multi-controlled variant of applyPhaseShift(), treating all
  *   but one arbitrary target qubit as control qubits.
