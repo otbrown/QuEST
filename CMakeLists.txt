@@ -1,6 +1,6 @@
 # @author Oliver Thomson Brown
 # @author Erich Essmann (patches including MSVC support)
-# @author Tyson Jones (tidying + patches including clang multithreading)
+# @author Tyson Jones (centralising macros, doc, patches including clang multithreading)
 # @author Luc Jaulmes (NUMA awareness, patching install)
 #
 # Contributions to previous builds from:
@@ -54,7 +54,7 @@ endif()
 
 
 # ============================
-# Declare options
+# Obtain options
 # ============================
 
 
@@ -90,21 +90,6 @@ message(STATUS "Library will be named lib${LIB_NAME}. Set LIB_NAME to modify.")
 option(VERBOSE_LIB_NAME "Modify library name based on compilation configuration. Turned OFF by default." OFF)
 message(STATUS "Verbose library naming is turned ${VERBOSE_LIB_NAME}. Set VERBOSE_LIB_NAME to modify.")
 
-if (VERBOSE_LIB_NAME)
-  # Same headers will be used for several verbosely-named libraries
-  set(MULTI_LIB_HEADERS 1)
-  function(compile_option VAR VALUE)
-    target_compile_definitions(QuEST PUBLIC ${VAR}=${VALUE})
-  endfunction()
-else()
-  # Headers will be used for a single library with a single valid configuration
-  set(MULTI_LIB_HEADERS 0)
-  function(compile_option VAR VALUE)
-    target_compile_definitions(QuEST PRIVATE ${VAR}=${VALUE})
-    set(${VAR} ${VALUE} PARENT_SCOPE)
-  endfunction()
-endif()
-
 
 # Precision
 set(FLOAT_PRECISION 2 
@@ -118,10 +103,6 @@ set_property(CACHE FLOAT_PRECISION PROPERTY STRINGS
   4
 )
 message(STATUS "Precision set to ${FLOAT_PRECISION}. Set FLOAT_PRECISION to modify.")
-
-if (VERBOSE_LIB_NAME)
-  string(CONCAT LIB_NAME ${LIB_NAME} "-fp${FLOAT_PRECISION}")
-endif()
 
 
 # Examples
@@ -174,14 +155,12 @@ option(
 )
 message(STATUS "NVIDIA GPU acceleration is turned ${ENABLE_CUDA}. Set ENABLE_CUDA to modify.")
 
-if (ENABLE_CUDA)
-  option(
-    ENABLE_CUQUANTUM
-    "Whether QuEST will be built with support for NVIDIA CuQuantum. Turned OFF by default."
-    OFF
-  )
-  message(STATUS "CuQuantum support is turned ${ENABLE_CUQUANTUM}. Set ENABLE_CUQUANTUM to modify.")
-endif()
+option(
+  ENABLE_CUQUANTUM
+  "Whether QuEST will be built with support for NVIDIA cuQuantum. Turned OFF by default."
+  OFF
+)
+message(STATUS "CuQuantum support is turned ${ENABLE_CUQUANTUM}. Set ENABLE_CUQUANTUM to modify.")
 
 option(
   ENABLE_HIP
@@ -189,15 +168,6 @@ option(
   OFF
 )
 message(STATUS "AMD GPU acceleration is turned ${ENABLE_HIP}. Set ENABLE_HIP to modify.")
-
-# Throw on disallowed GPU combinations
-if (ENABLE_CUDA AND ENABLE_HIP)
-  message(FATAL_ERROR "QuEST cannot support CUDA and HIP simultaneously.")
-endif()
-
-if ((ENABLE_CUDA OR ENABLE_HIP) AND FLOAT_PRECISION STREQUAL 4)
-  message(FATAL_ERROR "Quad precision is not supported on GPU. Please disable GPU acceleration or lower precision.")
-endif()
 
 
 # Deprecated API
@@ -208,15 +178,86 @@ option(
 )
 message(STATUS "Deprecated API support is turned ${ENABLE_DEPRECATED_API}. Set ENABLE_DEPRECATED_API to modify.")
 
+option(
+  DISABLE_DEPRECATION_WARNINGS
+  "Whether to disable compile-time warnings ordinarily triggered by use of the deprecated API. Turned OFF by default."
+  OFF
+)
+message(STATUS "Disabling of deprecated API warnings is turned ${DISABLE_DEPRECATION_WARNINGS}. Set DISABLE_DEPRECATION_WARNINGS to modify.")
 
-# Windows Specific Options
+
+
+# ============================
+# Validate options
+# ============================
+
+
+if (ENABLE_CUDA AND ENABLE_HIP)
+  message(FATAL_ERROR "QuEST cannot support CUDA and HIP simultaneously.")
+endif()
+
+
+if ((ENABLE_CUDA OR ENABLE_HIP) AND FLOAT_PRECISION STREQUAL 4)
+  message(FATAL_ERROR "Quad precision is not supported on GPU. Please disable GPU acceleration or lower precision.")
+endif()
+
+
+if (ENABLE_CUQUANTUM AND NOT ENABLE_CUDA)
+  message(FATAL_ERROR "Use of cuQuantum requires CUDA.")
+endif()
+
+
 if(WIN32)
   
   # Force MSVC to export all symbols in a shared library, like GCC and clang
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  if (ENABLE_TESTING)
+
+  if (ENABLE_TESTING AND BUILD_SHARED_LIBS)
+    message(WARNING "Compiling the tests on Windows requires BUILD_SHARED_LIBS=OFF which we now force.")
     set(BUILD_SHARED_LIBS OFF)
   endif()
+
+  if (ENABLE_DEPRECATED_API)
+    message(FATAL_ERROR "The deprecated API is not compatible with MSVC.")
+  endif()
+
+endif()
+
+
+
+# ============================
+# Extend verbose library name
+# ============================
+
+
+if (VERBOSE_LIB_NAME)
+
+  string(CONCAT LIB_NAME ${LIB_NAME} "-fp${FLOAT_PRECISION}")
+
+  if (ENABLE_MULTITHREADING)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+mt")
+  endif()
+
+  if (ENABLE_DISTRIBUTION)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+mpi")
+  endif()
+
+  if (ENABLE_CUDA)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+cuda")
+  endif()
+
+  if (ENABLE_HIP)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+hip")
+  endif()
+
+  if (ENABLE_CUQUANTUM)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+cuquantum")
+  endif()
+
+  if (ENABLE_DEPRECATED_API)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+depr")
+  endif()
+
 endif()
 
 
@@ -234,15 +275,15 @@ add_library(QuEST::QuEST ALIAS QuEST)
 
 # Set include directories
 target_include_directories(QuEST
-        PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/quest/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/quest/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 set_target_properties(QuEST PROPERTIES
-        VERSION     ${PROJECT_VERSION}
-        SOVERSION   ${PROJECT_VERSION_MAJOR}
+  VERSION     ${PROJECT_VERSION}
+  SOVERSION   ${PROJECT_VERSION_MAJOR}
 )
 
 
@@ -277,11 +318,8 @@ target_compile_options(QuEST
 
 
 # ============================
-# Pass options to library
+# Link optional dependencies
 # ============================
-
-
-compile_option(FLOAT_PRECISION ${FLOAT_PRECISION})
 
 
 # OpenMP
@@ -299,33 +337,11 @@ if (ENABLE_MULTITHREADING)
     message(FATAL_ERROR ${ErrorMsg})
   endif()
 
-  compile_option(COMPILE_OPENMP 1)
   target_link_libraries(QuEST
     PRIVATE
     OpenMP::OpenMP_CXX
     OpenMP::OpenMP_C
   )
-
-  # Find NUMA - location of NUMA headers
-  if (WIN32)
-    compile_option(NUMA_AWARE 0)
-    message(WARNING "Building on Windows, QuEST will not be aware of numa locality")
-  else()
-    include(FindPkgConfig)
-    pkg_search_module(NUMA numa IMPORTED_TARGET GLOBAL)
-    if (${NUMA_FOUND})
-      compile_option(NUMA_AWARE ${NUMA_FOUND})
-      target_link_libraries(QuEST PRIVATE PkgConfig::NUMA)
-      message(STATUS "NUMA awareness is enabled.")
-    else()
-      compile_option(NUMA_AWARE 0)
-      message(WARNING "libnuma not found, QuEST will not be aware of numa locality")
-    endif()
-  endif()
-
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+mt")
-  endif()
 
 else()
 
@@ -334,7 +350,31 @@ else()
     target_compile_options(QuEST PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wno-unknown-pragmas>)
   endif()
   
-  compile_option(COMPILE_OPENMP 0)
+endif()
+
+
+# NUMA (only relevant when multithreading)
+if (ENABLE_MULTITHREADING)
+
+  # Find NUMA - location of NUMA headers
+  if (WIN32)
+    set(NUMA_AWARE 0)
+    message(WARNING "Building on Windows, QuEST will not be aware of numa locality")
+  else()
+    include(FindPkgConfig)
+    pkg_search_module(NUMA numa IMPORTED_TARGET GLOBAL)
+    if (${NUMA_FOUND})
+      set(NUMA_AWARE ${NUMA_FOUND})
+      target_link_libraries(QuEST PRIVATE PkgConfig::NUMA)
+      message(STATUS "NUMA awareness is enabled.")
+    else()
+      set(NUMA_AWARE 0)
+      message(WARNING "libnuma not found, QuEST will not be aware of numa locality")
+    endif()
+  endif()
+
+else()
+  set(NUMA_AWARE 0)
 endif()
 
 
@@ -343,16 +383,10 @@ if (ENABLE_DISTRIBUTION)
   find_package(MPI REQUIRED
     COMPONENTS CXX
   )
-  compile_option(COMPILE_MPI 1)
   target_link_libraries(QuEST
     PRIVATE
     MPI::MPI_CXX
   )
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+mpi")
-  endif()
-else()
-  compile_option(COMPILE_MPI 0)
 endif()
 
 
@@ -366,32 +400,9 @@ if (ENABLE_CUDA)
 
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-  
-  set_property(TARGET QuEST PROPERTY CUDA_STANDARD 20)
-  
   set(CUDA_PROPAGATE_HOST_FLAGS OFF)
   
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+cuda")
-  endif()
-
-  # beware that compile_option(COMPILE_CUDA) is deferred to below because
-  # it is triggered by both/either ENABLE_CUDA and ENABLE_HIP
-
-endif()
-
-
-# cuQuantum
-if (ENABLE_CUQUANTUM)
-  find_package(CUQUANTUM REQUIRED)
-  compile_option(COMPILE_CUQUANTUM 1)
-  target_link_libraries(QuEST PRIVATE CUQUANTUM::cuStateVec)
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+cuquantum")
-  endif()
-else()
-  compile_option(COMPILE_CUQUANTUM 0)
+  set_property(TARGET QuEST PROPERTY CUDA_STANDARD 20)
 endif()
 
 
@@ -413,34 +424,48 @@ if (ENABLE_HIP)
   find_package(HIP REQUIRED)
   message(STATUS "Found HIP: " ${HIP_VERSION})
 
-  compile_option(COMPILE_CUQUANTUM 0)
   target_link_libraries(QuEST PRIVATE hip::host)
 
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+hip")
-  endif()
 endif()
 
 
-# set COMPILE_CUDA
+# cuQuantum
+if (ENABLE_CUQUANTUM)
+  find_package(CUQUANTUM REQUIRED)
+  target_link_libraries(QuEST PRIVATE CUQUANTUM::cuStateVec)
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+endif()
+
+
+
+# ===============================
+# Set options to save in config.h
+# ===============================
+
+
+# set vars which will be written to config.h.in (auto-converted to 0 or 1)
+set(COMPILE_OPENMP ${ENABLE_MULTITHREADING})
+set(COMPILE_MPI ${ENABLE_DISTRIBUTION})
+set(COMPILE_CUQUANTUM ${ENABLE_CUQUANTUM})
+set(INCLUDE_DEPRECATED_FUNCTIONS ${ENABLE_DEPRECATED_API})
+
+
+# (for the love of God cmake, create a concise syntax for this)
 if (ENABLE_CUDA OR ENABLE_HIP)
-  compile_option(COMPILE_CUDA 1)
+  set(COMPILE_CUDA 1)
 else()
-  compile_option(COMPILE_CUDA 0)
+  set(COMPILE_CUDA 0)
 endif()
 
 
-# v3 API
-if (ENABLE_DEPRECATED_API)
-  target_compile_definitions(QuEST PRIVATE INCLUDE_DEPRECATED_FUNCTIONS=1)
+# these vars are already set, but repeated here for clarity
+set(FLOAT_PRECISION ${FLOAT_PRECISION})
+set(NUMA_AWARE ${NUMA_AWARE})
+set(DISABLE_DEPRECATION_WARNINGS ${DISABLE_DEPRECATION_WARNINGS})
 
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+depr")
-  endif()
 
-else()
-  target_compile_definitions(QuEST PRIVATE INCLUDE_DEPRECATED_FUNCTIONS=0)
-endif()
+# these do not appear in src but are saved for record-keeping in config.h.in
+set(COMPILE_HIP ${ENABLE_HIP})
 
 
 
@@ -690,7 +715,7 @@ install(FILES
 )
 
 install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/include/quest/include/config.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/quest/include/config.h"
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/quest/include"
 )
 
