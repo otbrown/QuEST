@@ -29,9 +29,6 @@
 
 <!-- intro -->
 
-> [!NOTE]
-> QuEST `v4` has been released which re-designed QuEST from the ground up. Read about the exciting new features [here](docs/v4.md).
-
 The **Quantum Exact Simulation Toolkit** (QuEST) is a high-performance simulator of quantum statevectors and density matrices.
 It hybridises **multithreading**, **GPU acceleration** and **distribution** to run lightning fast on laptops, desktops and 
 supercomputers, parallelising over multiple cores, CPUs and GPUs. Behind the scenes, QuEST leverages [OpenMP](https://www.openmp.org/),
@@ -58,9 +55,8 @@ by both `C` and `C++` and all the major compilers (detailed [here](docs/compiler
 
 </div>
 
-
-QuEST development is led by the [QTechTheory](http://qtechtheory.org/) group at the University of Oxford, with active contributions from the [EPCC](https://www.epcc.ed.ac.uk/) team at the University of Edinburgh, and support from the below organisations.
-In particular, QuEST `v4` was made possible through the support of the UK National Quantum Computing centre (_NQCC200921_) and the [UKRI SEEQA](https://gtr.ukri.org/projects?ref=EP%2FY004655%2F1#/tabOverview) project.
+As of `v4.2`, QuEST development is led by the [EPCC](https://www.epcc.ed.ac.uk/) team at the University of Edinburgh, with support and former development by the [QTechTheory](http://qtechtheory.org/) group at the University of Oxford. QuEST has also received contributions and support from the below organisations.
+In particular, QuEST `v4.0` was made possible through the support of the UK National Quantum Computing centre (_NQCC200921_) and the [UKRI SEEQA](https://gtr.ukri.org/projects?ref=EP%2FY004655%2F1#/tabOverview) project.
 
 <div align="center">
 
