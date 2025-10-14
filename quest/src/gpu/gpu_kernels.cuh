@@ -18,7 +18,7 @@
 #ifndef GPU_KERNELS_HPP
 #define GPU_KERNELS_HPP
 
-#include "quest/include/modes.h"
+#include "quest/include/config.h"
 #include "quest/include/types.h"
 
 #include "quest/src/core/bitwise.hpp"
@@ -293,7 +293,7 @@ __forceinline__ __device__ qindex getThreadsNthGlobalArrInd(qindex n, qindex thr
 }
 
 
-template <int NumCtrls, int NumTargs, bool ApplyConj>
+template <int NumCtrls, int NumTargs, bool ApplyConj, bool ApplyTransp>
 __global__ void kernel_statevec_anyCtrlFewTargDenseMatr(
     cu_qcomp* amps, qindex numThreads,
     int* ctrlsAndTargs, int numCtrls, qindex ctrlsAndTargsMask, int* targs,
@@ -341,8 +341,12 @@ __global__ void kernel_statevec_anyCtrlFewTargDenseMatr(
         #pragma unroll
         for (qindex l=0; l<numTargAmps; l++) {
 
-            // h = flat index of matrix's (k,l)-th element
-            qindex h = fast_getMatrixFlatIndex(k, l, numTargAmps);
+            // h = flat index of matrix's (k,l)-th or (l,k)-th element
+            qindex h;
+            if constexpr (ApplyTransp)
+                h = fast_getMatrixFlatIndex(l, k, numTargAmps);
+            else
+                h = fast_getMatrixFlatIndex(k, l, numTargAmps);
 
             // optionally conjugate matrix elem
             cu_qcomp elem = flatMatrElems[h];
@@ -356,7 +360,7 @@ __global__ void kernel_statevec_anyCtrlFewTargDenseMatr(
 }
 
 
-template <int NumCtrls, bool ApplyConj>
+template <int NumCtrls, bool ApplyConj, bool ApplyTransp>
 __global__ void kernel_statevec_anyCtrlManyTargDenseMatr(
     cu_qcomp* globalCache,
     cu_qcomp* amps, qindex numThreads, qindex numBatchesPerThread,
@@ -398,10 +402,16 @@ __global__ void kernel_statevec_anyCtrlManyTargDenseMatr(
         
             for (qindex l=0; l<numTargAmps; l++) {
                 qindex j = getThreadsNthGlobalArrInd(l, t, numThreads);
-                qindex h = fast_getMatrixFlatIndex(k, l, numTargAmps);
 
-                // optionally conjugate matrix elem
+                // // h = flat index of matrix's (k,l)-th or (l,k)-th element
+                qindex h;
+                if constexpr (ApplyTransp)
+                    h = fast_getMatrixFlatIndex(l, k, numTargAmps);
+                else
+                    h = fast_getMatrixFlatIndex(k, l, numTargAmps);
+
                 cu_qcomp elem = flatMatrElems[h];
+
                 if constexpr (ApplyConj)
                     elem.y *= -1;
 
@@ -553,34 +563,38 @@ __global__ void kernel_statevec_anyCtrlAnyTargDiagMatr_sub(
  */
 
 
-template <bool HasPower, bool MultiplyOnly>
+template <bool HasPower, bool ApplyLeft, bool ApplyRight, bool ConjRight> 
 __global__ void kernel_densmatr_allTargDiagMatr_sub(
     cu_qcomp* amps, qindex numThreads, int rank, qindex logNumAmpsPerNode,
     cu_qcomp* elems, qindex numElems, cu_qcomp exponent
 ) {
     GET_THREAD_IND(n, numThreads);
 
-    // i = global row of nth local index
-    qindex i = n % numElems;
-    cu_qcomp fac = elems[i];
+    cu_qcomp fac = getCuQcomp(1, 0);
 
-    if constexpr (HasPower)
-        fac = getCompPower(fac, exponent);
+    if constexpr (ApplyLeft) {
 
-    if constexpr (!MultiplyOnly) {
+        qindex i = fast_getQuregGlobalRowFromFlatIndex(n, numElems);
+        cu_qcomp term = elems[i];
 
-        // m = global index corresponding to n
-        qindex m = concatenateBits(rank, n, logNumAmpsPerNode);
-
-        // j = global column corresponding to n
-        qindex j = m / numElems;
-        cu_qcomp term = elems[j];
-
-        if constexpr(HasPower)
+        if constexpr (HasPower)
             term = getCompPower(term, exponent);
 
-        // conj after pow
-        term.y *= -1;
+        fac = term;
+    }
+
+    if constexpr (ApplyRight) {
+
+        qindex m = concatenateBits(rank, n, logNumAmpsPerNode);
+        qindex j = fast_getQuregGlobalColFromFlatIndex(m, numElems);
+        cu_qcomp term = elems[j];
+
+        if constexpr (HasPower)
+            term = getCompPower(term, exponent);
+
+        if constexpr (ConjRight)
+            term.y *= -1;
+
         fac = fac * term;
     }
 
@@ -697,9 +711,30 @@ __global__ void kernel_statevector_anyCtrlAnyTargZOrPhaseGadget_sub(
  */
 
 
+template <int NumQuregs> 
+__global__ void kernel_statevec_setQuregToWeightedSum_sub(
+    cu_qcomp* outAmps, qindex numThreads,
+    cu_qcomp* coeffs, cu_qcomp** inAmps, int numQuregs
+) {
+    GET_THREAD_IND(n, numThreads);
+
+    // use template param to compile-time unroll below loop
+    SET_VAR_AT_COMPILE_TIME(int, numInner, NumQuregs, numQuregs);
+
+    cu_qcomp amp = getCuQcomp(0, 0);
+
+    for (int q=0; q<numInner; q++)
+        amp = amp + coeffs[q] * inAmps[q][n];
+
+    // must not modify outAmps[n] before computing the amp 
+    // since outAmps can legally appear among inAmps
+    outAmps[n] = amp;
+}
+
+
 // kernel_densmatr_mixQureg_subA() is avoided; we instead use
 // Thrust for this common circumstances (mixing density matrices),
-// which should be significantly more optimisex
+// which should be significantly more optimised
 
 
 __global__ void kernel_densmatr_mixQureg_subB(

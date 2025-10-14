@@ -14,10 +14,7 @@
 #include <catch2/generators/catch_generators_range.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
-#define INCLUDE_DEPRECATED_FUNCTIONS 1
-#define DISABLE_DEPRECATION_WARNINGS 1
 #include "quest.h"
-
 #include "test_utilities.hpp"
     
 /* allows concise use of ContainsSubstring in catch's REQUIRE_THROWS_WITH */
@@ -743,14 +740,14 @@ TEST_CASE( "setWeightedQureg", "[state_initialisations]" ) {
             Complex f; f.real = 0; f.imag = 0;
             
             // two state-vecs, one density-matrix
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, mat, f, vec, f, vec), ContainsSubstring("Cannot superpose a density matrix. All quregs must be statevectors") );
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, vec, f, mat, f, vec), ContainsSubstring("Cannot superpose a density matrix. All quregs must be statevectors") );
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, vec, f, vec, f, mat), ContainsSubstring("Cannot superpose a density matrix. All quregs must be statevectors") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, mat, f, vec, f, vec), ContainsSubstring("inconsistent attributes") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, vec, f, mat, f, vec), ContainsSubstring("inconsistent attributes") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, vec, f, vec, f, mat), ContainsSubstring("inconsistent attributes") );
 
             // one state-vec, two density-matrices
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, vec, f, mat, f, mat), ContainsSubstring("Cannot superpose a density matrix. All quregs must be statevectors") );
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, mat, f, vec, f, mat), ContainsSubstring("Cannot superpose a density matrix. All quregs must be statevectors") );
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, mat, f, mat, f, vec), ContainsSubstring("Cannot superpose a density matrix. All quregs must be statevectors") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, vec, f, mat, f, mat), ContainsSubstring("inconsistent attributes") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, mat, f, vec, f, mat), ContainsSubstring("inconsistent attributes") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, mat, f, mat, f, vec), ContainsSubstring("inconsistent attributes") );
         
             destroyQureg(vec);
             destroyQureg(mat);
@@ -764,9 +761,9 @@ TEST_CASE( "setWeightedQureg", "[state_initialisations]" ) {
             Complex f; f.real = 0; f.imag = 0;
             
             // state-vecs
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, vecA, f, vecB, f, vecB), ContainsSubstring("differing numbers of qubits") );
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, vecB, f, vecA, f, vecB), ContainsSubstring("differing numbers of qubits") );
-            REQUIRE_THROWS_WITH( setWeightedQureg(f, vecB, f, vecB, f, vecA), ContainsSubstring("differing numbers of qubits") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, vecA, f, vecB, f, vecB), ContainsSubstring("inconsistent attributes") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, vecB, f, vecA, f, vecB), ContainsSubstring("inconsistent attributes") );
+            REQUIRE_THROWS_WITH( setWeightedQureg(f, vecB, f, vecB, f, vecA), ContainsSubstring("inconsistent attributes") );
             
             // v4 does not permit superposing density matrices
 

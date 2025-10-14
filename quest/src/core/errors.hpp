@@ -5,6 +5,7 @@
  * deployment is consistent with the compiled deployment modes.
  * 
  * @author Tyson Jones
+ * @author Luc Jaulmes (NUMA & pagesize errors)
  */
 
 #ifndef ERRORS_HPP
@@ -50,6 +51,20 @@ void error_allocOfQuESTEnvFailed();
 
 void error_memSizeQueriedButWouldOverflow();
 
+void error_gettingPageSizeFailed();
+
+void error_pageSizeNotAPowerOf2();
+
+void error_pageSizeNotAMultipleOfQcomp();
+
+void error_gettingNumNumaNodesFailed();
+
+void error_numaAllocOrDeallocAttemptedOnWindows();
+
+void error_numaBindingFailed();
+
+void error_numaUnmappingFailed();
+
 
 
 /*
@@ -61,8 +76,6 @@ void error_commNotInit();
 void error_commAlreadyInit();
 
 void error_commButEnvNotDistributed();
-
-void error_commButQuregNotDistributed();
 
 void error_commOutOfBounds();
 
@@ -153,6 +166,8 @@ void assert_fullStateDiagMatrIsLocal(FullStateDiagMatr matr);
 
 void assert_fullStateDiagMatrIsDistributed(FullStateDiagMatr matr);
 
+void assert_fullStateDiagMatrTemplateParamsAreValid(bool applyLeft, bool applyRight, bool conjRight);
+
 void assert_acceleratorQuregIsDistributed(Qureg qureg);
 
 void assert_quregAndFullStateDiagMatrAreBothOrNeitherDistrib(Qureg qureg, FullStateDiagMatr matr);
@@ -186,9 +201,6 @@ void assert_bufferPackerGivenIncreasingQubits(int qubit1, int qubit2, int qubit3
 void assert_quregAndFullStateDiagMatrHaveSameDistrib(Qureg qureg, FullStateDiagMatr matr);
 
 void assert_quregDistribAndFullStateDiagMatrLocal(Qureg qureg, FullStateDiagMatr matr);
-
-void assert_superposedQuregDimsAndDeploysMatch(Qureg facOut, Qureg in1, Qureg in2);
-
 
 
 /*
@@ -227,6 +239,8 @@ void error_gpuUnexpectedlyInaccessible();
 
 void error_gpuDeadCopyMatrixFunctionCalled();
 
+void error_gpuDenseMatrixConjugatedAndTransposed();
+
 void assert_gpuIsAccessible();
 
 void assert_gpuHasBeenBound(bool isBound);
@@ -246,6 +260,8 @@ void assert_applyFullStateDiagMatrTempGpuAllocSucceeded(qcomp* gpuPtr);
  */
 
 void error_cudaCallFailed(const char* msg, const char* func, const char* caller, const char* file, int line);
+
+void error_cudaEncounteredIrrecoverableError();
 
 
 
@@ -272,6 +288,16 @@ void error_cuQuantumTempCpuAllocFailed();
  */
 
 void error_pauliStrShiftedByIllegalAmount();
+
+void error_pauliStrSumHasMoreQubitsThanSpecifiedInTensorProd();
+
+void error_pauliStrSumHasMoreQubitsThanSpecifiedInConjShift();
+
+void error_pauliStrSumTensorProdHasIncorrectNumTerms();
+
+void error_pauliStrSumProdHasIncorrectNumTerms();
+
+void error_pauliStrSumConjHasIncorrectNumTerms();
 
 
 
@@ -336,6 +362,24 @@ void error_printerFailedToAllocTempMemory();
 void assert_printerGivenNonNegativeNumNewlines();
 
 void assert_printerGivenPositiveNumNewlines();
+
+
+
+/*
+ * ENVIRONMENT VARIABLE ERRORS
+ */
+
+void error_envVarsNotYetLoaded();
+
+void error_envVarsAlreadyLoaded();
+
+
+
+/*
+ * TROTTERISATION ERRORS
+ */
+
+void error_unexpectedNumLindbladSuperpropTerms();
 
 
 

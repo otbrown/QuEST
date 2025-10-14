@@ -2,9 +2,6 @@
  * The main QuEST header, exposing the entire API.
  * This header is intendedly included by user
  * source-code, and is both C11 and C++14 compatible.
- * Preprocessor 'INCLUDE_DEPRECATED_FUNCTIONS' can
- * be defined as 1 to additionally include QuEST's
- * deprecated v3 API, before including this header.
  * 
  * @author Tyson Jones
  * @author Luc Jaulmes (patching CMake install)
@@ -30,34 +27,21 @@
 #ifndef QUEST_H
 #define QUEST_H
 
+// include config.h first to define macros
+// consulted by subsequent headers
+#include "quest/include/config.h"
 
-// bind compile settings to installed exec
-#if !@MULTI_LIB_HEADERS@
-#cmakedefine FLOAT_PRECISION @FLOAT_PRECISION@
-#cmakedefine01 COMPILE_MPI
-#cmakedefine01 COMPILE_OPENMP
-#cmakedefine01 COMPILE_CUDA
-#cmakedefine01 COMPILE_CUQUANTUM
-#endif
-
-
-// include version first so it is accessible to 
-// debuggers in case a subsequent include fails
-#include "quest/include/version.h"
-
-// include before API headers since it validates
-// preprocessor configuration, and affirms macro
-// preconditions assumed by subsequent header
 #include "quest/include/modes.h"
-
 #include "quest/include/precision.h"
 #include "quest/include/types.h"
 #include "quest/include/calculations.h"
 #include "quest/include/debug.h"
 #include "quest/include/decoherence.h"
 #include "quest/include/environment.h"
+#include "quest/include/trotterisation.h"
 #include "quest/include/initialisations.h"
 #include "quest/include/channels.h"
+#include "quest/include/multiplication.h"
 #include "quest/include/operations.h"
 #include "quest/include/paulis.h"
 #include "quest/include/qureg.h"

@@ -51,7 +51,7 @@ PROJECT_NAME           = "The Quantum Exact Simulation Toolkit"
 # could be handy for archiving the generated documentation or if some version
 # control system is used.
 
-PROJECT_NUMBER         = "v4.1.0"
+PROJECT_NUMBER         = "v4.2.0"
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewer a
@@ -301,6 +301,8 @@ ALIASES += "notyetdoced=@note Documentation for this function or struct is under
 ALIASES += "cpponly=@remark This function is only available in C++."
 ALIASES += "conly=@remark This function is only available in C."
 ALIASES += "macrodoc=@note This entity is actually a macro."
+ALIASES += "envvardoc=@note This entity is actually an environment variable."
+ALIASES += "envvarvalues=@par Values"
 ALIASES += "neverdoced=@warning This entity is a macro, undocumented directly due to a Doxygen limitation. If you see this doc rendered, contact the devs!"
 ALIASES += "myexample=@par Example"
 ALIASES += "equivalences=@par Equivalences"
@@ -308,6 +310,7 @@ ALIASES += "constraints=@par Constraints"
 ALIASES += "formulae=@par Formulae"
 ALIASES += "diagram=@par Diagram"
 ALIASES += "validationerror=error"
+ALIASES += "segfault=seg-fault"
 
 # We are temporarily hiding the @cppvectoroverload functions since they differ
 # trivially from the language-agnostic functions (ptr,len vs vector) yet clutter
@@ -1925,7 +1928,10 @@ MATHJAX_RELPATH        =
 # MATHJAX_EXTENSIONS = ams
 # This tag requires that the tag USE_MATHJAX is set to YES.
 
-MATHJAX_EXTENSIONS     =
+### Tyson:
+### these were added to attemptedly fix \mathcal rendering
+### but they did nothing, alas! I retain for posterity
+MATHJAX_EXTENSIONS     = TeX/AMSmath TeX/AMSsymbols
 
 # The MATHJAX_CODEFILE tag can be used to specify a file with javascript pieces
 # of code that will be used on startup of the MathJax code. See the MathJax site
@@ -2099,7 +2105,10 @@ PAPER_TYPE             = a4
 # If left blank no extra packages will be included.
 # This tag requires that the tag GENERATE_LATEX is set to YES.
 
-EXTRA_PACKAGES         = times, amsmath, xr, amsfonts, tikz
+### Tyson:
+### \mathcal{L} does not render despite amssymb appearing below
+### (and MathJax given the AMSsymbols extension elsewhere), grr!
+EXTRA_PACKAGES         = xr times amsmath amssymb amsfonts tikz
 
 # The LATEX_HEADER tag can be used to specify a user-defined LaTeX header for
 # the generated LaTeX document. The header should contain everything until the

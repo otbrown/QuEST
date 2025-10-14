@@ -63,10 +63,20 @@ using std::min;
         ((b2)? funcname<false,true> : funcname<false,false>))
 
 
+#define GET_CPU_OR_GPU_FOUR_BOOL_FUNC_OPTIMISED_FOR_FIRST_BOOL( isgpu, funcsuffix, value, fixed1,fixed2,fixed3 ) \
+    ((isgpu)? \
+        ((value)? gpu_##funcsuffix<true, fixed1,fixed2,fixed3> : gpu_##funcsuffix<false, fixed1,fixed2,fixed3> ) : \
+        ((value)? cpu_##funcsuffix<true, fixed1,fixed2,fixed3> : cpu_##funcsuffix<false, fixed1,fixed2,fixed3> ))
+
+
 #if (MAX_OPTIMISED_NUM_CTRLS != 5) || (MAX_OPTIMISED_NUM_TARGS != 5)
     #error "The number of optimised, templated QuEST functions was inconsistent between accelerator's source and header."
 #endif
 
+
+#define GET_FUNC_OPTIMISED_FOR_NUM_QUREGS(f, numquregs) \
+    (vector <decltype(&f<0>)> {&f<0>, &f<1>, &f<2>, &f<3>, &f<4>, &f<5>, &f<-1>}) \
+    [std::min((int) numquregs, MAX_OPTIMISED_NUM_QUREGS + 1)]
 
 #define GET_FUNC_OPTIMISED_FOR_NUM_CTRLS(f, numctrls) \
     (vector <decltype(&f<0>)> {&f<0>, &f<1>, &f<2>, &f<3>, &f<4>, &f<5>, &f<-1>}) \
@@ -91,6 +101,11 @@ using std::min;
 #define ARR(f) vector<decltype(&f<0,0>)>
 
 
+#define GET_CPU_OR_GPU_FUNC_OPTIMISED_FOR_NUM_QUREGS(funcsuffix, qureg, numquregs) \
+    ((qureg.isGpuAccelerated)? \
+        GET_FUNC_OPTIMISED_FOR_NUM_QUREGS( gpu_##funcsuffix, numquregs ) : \
+        GET_FUNC_OPTIMISED_FOR_NUM_QUREGS( cpu_##funcsuffix, numquregs ))
+
 #define GET_CPU_OR_GPU_FUNC_OPTIMISED_FOR_NUM_CTRLS(funcsuffix, qureg, numctrls) \
     ((qureg.isGpuAccelerated)? \
         GET_FUNC_OPTIMISED_FOR_NUM_CTRLS( gpu_##funcsuffix, numctrls ) : \
@@ -108,9 +123,9 @@ using std::min;
 
 
 /// @todo
-/// GET_CPU_OR_GPU_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS,
-/// as defined below, is only ever called by used by anyCtrlAnyTargDenseMatr,
-/// which only ever receives numTargs>=3 (due to accelerator redirecting 
+/// GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS as defined below
+/// is used by anyCtrlAnyTargDiagMatr and anyCtrlAnyTargDenseMatr; the 
+/// latter only ever receives numTargs>=3 (due to accelerator redirecting 
 /// fewer targets to faster bespoke functions which e.g. avoid global GPU
 /// cache emory access). This means its instantiation with numTargs=0,1,2
 /// is useless, though contributes to 42% of the function's compilation
@@ -118,38 +133,7 @@ using std::min;
 /// can ergo non-negligibly speed up compilation by avoiding these redundant 
 /// instances at the cost of increased code complexity/asymmetry. Consider!
 
-#define GET_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS(f, numctrls, numtargs, c) \
-    (vector <CONJ_ARR(f)> { \
-        CONJ_ARR(f) {&f<0,0,c>,  &f<0,1,c>,  &f<0,2,c>,  &f<0,3,c>,  &f<0,4,c>,  &f<0,5,c>,  &f<0,-1,c>}, \
-        CONJ_ARR(f) {&f<1,0,c>,  &f<1,1,c>,  &f<1,2,c>,  &f<1,3,c>,  &f<1,4,c>,  &f<1,5,c>,  &f<1,-1,c>}, \
-        CONJ_ARR(f) {&f<2,0,c>,  &f<2,1,c>,  &f<2,2,c>,  &f<2,3,c>,  &f<2,4,c>,  &f<2,5,c>,  &f<2,-1,c>}, \
-        CONJ_ARR(f) {&f<3,0,c>,  &f<3,1,c>,  &f<3,2,c>,  &f<3,3,c>,  &f<3,4,c>,  &f<3,5,c>,  &f<3,-1,c>}, \
-        CONJ_ARR(f) {&f<4,0,c>,  &f<4,1,c>,  &f<4,2,c>,  &f<4,3,c>,  &f<4,4,c>,  &f<4,5,c>,  &f<4,-1,c>}, \
-        CONJ_ARR(f) {&f<5,0,c>,  &f<5,1,c>,  &f<5,2,c>,  &f<5,3,c>,  &f<5,4,c>,  &f<5,5,c>,  &f<5,-1,c>}, \
-        CONJ_ARR(f) {&f<-1,0,c>, &f<-1,1,c>, &f<-1,2,c>, &f<-1,3,c>, &f<-1,4,c>, &f<-1,5,c>, &f<-1,-1,c>}}) \
-    [std::min((int) numctrls, MAX_OPTIMISED_NUM_CTRLS + 1)] \
-    [std::min((int) numtargs, MAX_OPTIMISED_NUM_TARGS + 1)]
-
-#define CONJ_ARR(f) vector<decltype(&f<0,0,false>)>
-
-#define GET_CPU_OR_GPU_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS(funcsuffix, qureg, numctrls, numtargs, conj) \
-    ((qureg.isGpuAccelerated)? \
-        ((conj)? \
-            GET_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, true ) : \
-            GET_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, false ) ) : \
-        ((conj)? \
-            GET_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, true ) : \
-            GET_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, false ) ) )
-
-
-/// @todo
-/// This has gotten a bit ridiculous. Is there a way to use (likely)
-/// more abominable pre-processor mischief which negates the need
-/// to repeat the entire macro(s) when the number of templated
-/// parameters grows?
-
-
-#define GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS(f, numctrls, numtargs, c, h) \
+#define GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS(f, numctrls, numtargs, c, h) \
     (vector <POWER_CONJ_ARR(f)> { \
         POWER_CONJ_ARR(f) {&f<0,0,c,h>,  &f<0,1,c,h>,  &f<0,2,c,h>,  &f<0,3,c,h>,  &f<0,4,c,h>,  &f<0,5,c,h>,  &f<0,-1,c,h>}, \
         POWER_CONJ_ARR(f) {&f<1,0,c,h>,  &f<1,1,c,h>,  &f<1,2,c,h>,  &f<1,3,c,h>,  &f<1,4,c,h>,  &f<1,5,c,h>,  &f<1,-1,c,h>}, \
@@ -163,22 +147,25 @@ using std::min;
 
 #define POWER_CONJ_ARR(f) vector<decltype(&f<0,0,false,false>)>
 
-#define GET_CPU_OR_GPU_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS(funcsuffix, qureg, numctrls, numtargs, conj, haspower) \
+#define GET_CPU_OR_GPU_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS(funcsuffix, qureg, numctrls, numtargs, conj, haspower) \
     ((qureg.isGpuAccelerated)? \
         ((conj)? \
             ((haspower)? \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, true, true ) : \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, true, false ) ) : \
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, true, true ) : \
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, true, false ) ) : \
             ((haspower)? \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, false, true ) : \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, false, false ) ) ) : \
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, false, true ) : \
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( gpu_##funcsuffix, numctrls, numtargs, false, false ) ) ) : \
         ((conj)? \
             ((haspower)? \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, true, true ) : \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, true, false ) ) : \
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, true, true ) : \
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, true, false ) ) : \
             ((haspower)? \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, false, true ) : \
-                GET_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, false, false ) ) ) )
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, false, true ) : \
+                GET_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( cpu_##funcsuffix, numctrls, numtargs, false, false ) ) ) )
+
+/// @todo
+/// The above macro spaghetti is diabolical - update using C++ metaprogamming!
 
 
 
@@ -329,9 +316,9 @@ void accel_statevec_anyCtrlTwoTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, 
 }
 
 
-void accel_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, vector<int> ctrlStates, vector<int> targs, CompMatr matr, bool conj) {
+void accel_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, vector<int> ctrlStates, vector<int> targs, CompMatr matr, bool conj, bool transp) {
 
-    auto func = GET_CPU_OR_GPU_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( statevec_anyCtrlAnyTargDenseMatr_sub, qureg, ctrls.size(), targs.size(), conj );
+    auto func = GET_CPU_OR_GPU_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( statevec_anyCtrlAnyTargDenseMatr_sub, qureg, ctrls.size(), targs.size(), conj, transp );
     func(qureg, ctrls, ctrlStates, targs, matr);
 }
 
@@ -360,7 +347,7 @@ void accel_statevec_anyCtrlAnyTargDiagMatr_sub(Qureg qureg, vector<int> ctrls, v
 
     bool hasPower = exponent != qcomp(1, 0);
 
-    auto func = GET_CPU_OR_GPU_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( statevec_anyCtrlAnyTargDiagMatr_sub, qureg, ctrls.size(), targs.size(), conj, hasPower );
+    auto func = GET_CPU_OR_GPU_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( statevec_anyCtrlAnyTargDiagMatr_sub, qureg, ctrls.size(), targs.size(), conj, hasPower );
     func(qureg, ctrls, ctrlStates, targs, matr, exponent);
 }
 
@@ -414,7 +401,30 @@ void accel_statevec_allTargDiagMatr_sub(Qureg qureg, FullStateDiagMatr matr, qco
 }
 
 
-void accel_densmatr_allTargDiagMatr_subA(Qureg qureg, FullStateDiagMatr matr, qcomp exponent, bool multiplyOnly) {
+auto getDenseMatrAllTargDiagMatrFunc(bool isGpu, qcomp exponent, bool applyLeft, bool applyRight, bool conjRight) {
+
+    // this helper function exists, dissimilar from the function-agnostic macros used
+    // by other functions, because densmatr_allTargDiagMatr_sub() does not accept every
+    // possible combination of its boolean template parameters 
+    assert_fullStateDiagMatrTemplateParamsAreValid(applyLeft, applyRight, conjRight);
+
+    bool hasPower = exponent != qcomp(1, 0);
+
+    if (applyLeft && applyRight && conjRight)
+        return GET_CPU_OR_GPU_FOUR_BOOL_FUNC_OPTIMISED_FOR_FIRST_BOOL( isGpu, densmatr_allTargDiagMatr_sub, hasPower, true,true,true );
+
+    if (applyLeft && ! applyRight && ! conjRight)
+        return GET_CPU_OR_GPU_FOUR_BOOL_FUNC_OPTIMISED_FOR_FIRST_BOOL( isGpu, densmatr_allTargDiagMatr_sub, hasPower, true,false,false );
+
+    if (! applyLeft && applyRight && ! conjRight)
+        return GET_CPU_OR_GPU_FOUR_BOOL_FUNC_OPTIMISED_FOR_FIRST_BOOL( isGpu, densmatr_allTargDiagMatr_sub, hasPower, false,true,false );
+
+    // unreachable
+    return (void (*)(Qureg, FullStateDiagMatr, qcomp)) nullptr;
+}
+
+
+void accel_densmatr_allTargDiagMatr_subA(Qureg qureg, FullStateDiagMatr matr, qcomp exponent, bool applyLeft, bool applyRight, bool conjRight) {
 
     // matr is always local, qureg can be local or distributed...
     assert_fullStateDiagMatrIsLocal(matr);
@@ -423,9 +433,9 @@ void accel_densmatr_allTargDiagMatr_subA(Qureg qureg, FullStateDiagMatr matr, qc
     bool quregGPU = qureg.isGpuAccelerated;
     bool matrGPU = matr.isGpuAccelerated;
 
-    bool hasPower = exponent != qcomp(1, 0);
-    auto cpuFunc = GET_FUNC_OPTIMISED_FOR_TWO_BOOLS( cpu_densmatr_allTargDiagMatr_sub, hasPower, multiplyOnly );
-    auto gpuFunc = GET_FUNC_OPTIMISED_FOR_TWO_BOOLS( gpu_densmatr_allTargDiagMatr_sub, hasPower, multiplyOnly );
+    // which determines which function is called
+    auto gpuFunc = getDenseMatrAllTargDiagMatrFunc(true,  exponent, applyLeft, applyRight, conjRight);
+    auto cpuFunc = getDenseMatrAllTargDiagMatrFunc(false, exponent, applyLeft, applyRight, conjRight);
 
     // when deployments match, we trivially call the common backend
     if ( quregGPU &&  matrGPU) gpuFunc(qureg, matr, exponent);
@@ -475,7 +485,7 @@ void accel_densmatr_allTargDiagMatr_subA(Qureg qureg, FullStateDiagMatr matr, qc
 }
 
 
-void accel_densmatr_allTargDiagMatr_subB(Qureg qureg, FullStateDiagMatr matr, qcomp exponent, bool multiplyOnly) {
+void accel_densmatr_allTargDiagMatr_subB(Qureg qureg, FullStateDiagMatr matr, qcomp exponent, bool applyLeft, bool applyRight, bool conjRight) {
 
     assert_fullStateDiagMatrIsDistributed(matr);
     assert_acceleratorQuregIsDistributed(qureg);
@@ -500,7 +510,7 @@ void accel_densmatr_allTargDiagMatr_subB(Qureg qureg, FullStateDiagMatr matr, qc
     temp.cpuElems = qureg.cpuCommBuffer;
     temp.gpuElems = qureg.gpuCommBuffer;
 
-    accel_densmatr_allTargDiagMatr_subA(qureg, temp, exponent, multiplyOnly);
+    accel_densmatr_allTargDiagMatr_subA(qureg, temp, exponent, applyLeft, applyRight, conjRight);
 }
 
 
@@ -538,12 +548,11 @@ void accel_statevector_anyCtrlAnyTargZOrPhaseGadget_sub(Qureg qureg, vector<int>
  */
 
 
-void accel_statevec_setQuregToSuperposition_sub(qcomp facOut, Qureg outQureg, qcomp fac1, Qureg inQureg1, qcomp fac2, Qureg inQureg2) {
+void accel_statevec_setQuregToWeightedSum_sub(Qureg outQureg, vector<qcomp> coeffs, vector<Qureg> inQuregs) {
 
-    // consult outQureg's deployment (other quregs should match, though we dangerously do not assert this post-validation)
-    (outQureg.isGpuAccelerated)?
-        gpu_statevec_setQuregToSuperposition_sub(facOut, outQureg, fac1, inQureg1, fac2, inQureg2):
-        cpu_statevec_setQuregToSuperposition_sub(facOut, outQureg, fac1, inQureg1, fac2, inQureg2); 
+    // consult outQureg's deployment since others are prior validated to match
+    auto func = GET_CPU_OR_GPU_FUNC_OPTIMISED_FOR_NUM_QUREGS( statevec_setQuregToWeightedSum_sub, outQureg, inQuregs.size() );
+    func(outQureg, coeffs, inQuregs);
 }
 
 

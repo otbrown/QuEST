@@ -312,7 +312,7 @@ void validate_newPauliStrSumAllocs(PauliStrSum sum, qindex numBytesStrings, qind
 
 void validate_parsedPauliStrSumLineIsInterpretable(bool isInterpretable, string line, qindex lineIndex, const char* caller);
 
-void validate_parsedPauliStrSumCoeffIsValid(bool isCoeffValid, string line, qindex lineIndex, const char* caller);
+void validate_parsedPauliStrSumCoeffWithinQcompRange(bool isCoeffValid, string line, qindex lineIndex, const char* caller);
 
 void validate_parsedPauliStrSumLineHasConsistentNumPaulis(int numPaulis, int numLinePaulis, string line, qindex lineIndex, const char* caller);
 
@@ -341,6 +341,10 @@ void validate_pauliStrSumFields(PauliStrSum sum, const char* caller);
 void validate_pauliStrSumIsHermitian(PauliStrSum sum, const char* caller);
 
 void validate_pauliStrSumTargets(PauliStrSum sum, Qureg qureg, const char* caller);
+
+void validate_controlAndPauliStrSumTargets(Qureg qureg, int ctrl, PauliStrSum sum, const char* caller);
+
+void validate_controlsAndPauliStrSumTargets(Qureg qureg, int* ctrls, int numCtrls, PauliStrSum sum, const char* caller);
 
 void validate_pauliStrSumCanInitMatrix(FullStateDiagMatr matr, PauliStrSum sum, const char* caller);
 
@@ -410,7 +414,25 @@ void validate_rotationAxisNotZeroVector(qreal x, qreal y, qreal z, const char* c
 
 void validate_mixedAmpsFitInNode(Qureg qureg, int numTargets, const char* caller);
 
+
+
+/*
+ * TROTTERISATION PARAMETERS
+ */
+
 void validate_trotterParams(Qureg qureg, int order, int reps, const char* caller);
+
+
+
+/*
+ * TIME EVOLUTION PARAMETERS
+ */
+
+void validate_lindbladJumpOps(PauliStrSum* jumps, int numJumps, Qureg qureg, const char* caller);
+
+void validate_lindbladDampingRates(qreal* damps, int numJumps, const char* caller);
+
+void validate_numLindbladSuperPropagatorTerms(qindex numSuperTerms, const char* caller);
 
 
 
@@ -419,6 +441,8 @@ void validate_trotterParams(Qureg qureg, int order, int reps, const char* caller
  */
 
 void validate_probability(qreal prob, const char* caller);
+
+void validate_probabilities(qreal* probs, int numProbs, const char* caller);
 
 void validate_oneQubitDepashingProb(qreal prob, const char* caller);
 void validate_twoQubitDepashingProb(qreal prob, const char* caller);
@@ -436,11 +460,19 @@ void validate_oneQubitPauliChannelProbs(qreal pX, qreal pY, qreal pZ, const char
  * QUREG COMBINATION
  */
 
+void validate_numQuregsInSum(int numQuregs, const char* caller);
+
 void validate_quregCanBeWorkspace(Qureg quregA, Qureg quregB, const char* caller);
 
-void validate_quregsCanBeMixed(Qureg quregOut, Qureg quregIn, const char* caller);
+void validate_quregsCanBeSummed(Qureg out, Qureg* in, int numIn, const char* caller);
 
-void validate_quregsCanBeSuperposed(Qureg qureg1, Qureg qureg2, Qureg qureg3, const char* caller);
+void validate_quregsCanBeMixed(Qureg out, Qureg* in, int numIn, const char* caller);
+
+void validate_quregPairCanBeMixed(Qureg out, Qureg in, const char* caller);
+
+void validate_numQuregsMatchesCoeffs(size_t numQuregs, size_t numCoeffs, const char* caller);
+
+void validate_numQuregsMatchesProbs(size_t numQuregs, size_t numProbs, const char* caller);
 
 void validate_quregCanBeInitialisedToPureState(Qureg qureg, Qureg pure, const char* caller);
 
@@ -484,7 +516,6 @@ void validate_densMatrExpecDiagMatrValueIsReal(qcomp value, qcomp exponent, cons
  * PARTIAL TRACE
  */
 
-
 void validate_quregCanBeReduced(Qureg qureg, int numTraceQubits, const char* caller);
 
 void validate_quregCanBeSetToReducedDensMatr(Qureg out, Qureg in, int numTraceQubits, const char* caller);
@@ -504,6 +535,16 @@ void validate_canReadFile(string fn, const char* caller);
  */
 
 void validate_tempAllocSucceeded(bool succeeded, qindex numElems, qindex numBytesPerElem, const char* caller);
+
+
+
+/*
+ * ENVIRONMENT VARIABLES
+ */
+
+void validate_envVarPermitNodesToShareGpu(string varValue, const char* caller);
+
+void validate_envVarDefaultValidationEpsilon(string varValue, const char* caller);
 
 
 

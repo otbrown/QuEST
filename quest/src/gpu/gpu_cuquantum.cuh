@@ -25,7 +25,9 @@
 #define GPU_CUQUANTUM_HPP
 
 
-// check preprocessors and compilers are valid before #includes to avoid compile errors
+// check preprocessors and compilers are valid before #includes to avoid 
+// compile errors (though we must still obtain the preprocessors from config.h)
+#include "quest/include/config.h"
 
 #if ! COMPILE_CUQUANTUM
     #error "A file being compiled somehow included gpu_cuquantum.hpp despite QuEST not being compiled in cuQuantum mode."
@@ -134,9 +136,10 @@ int deallocMemInPool(void* ctx, void* ptr, size_t size, cudaStream_t stream) {
 void gpu_initCuQuantum() {
 
     // the cuStateVec docs say custatevecCreate() should be called
-    // once per physical GPU, though oversubscribing MPI processes
-    // while setting PERMIT_NODES_TO_SHARE_GPU=1 worked fine in our
-    // testing - we will treat it as tolerable but undefined behaviour
+    // once per physical GPU, though assigning multiple MPI processes
+    // to each GPU with each calling custatevecCreate() below worked
+    // fine in our testing. We here tolerate oversubscription, letting
+    // prior validation prevent it (disabled by an environment variable)
 
     // create new stream and cuQuantum handle, binding to global config
     CUDA_CHECK( custatevecCreate(&config.handle) );
@@ -196,13 +199,10 @@ void cuquantum_statevec_anyCtrlSwap_subA(Qureg qureg, vector<int> ctrls, vector<
  */
 
 
-void cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(Qureg qureg, vector<int> ctrls, vector<int> ctrlStates, vector<int> targs, cu_qcomp* flatMatrElems) {
+void cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(Qureg qureg, vector<int> ctrls, vector<int> ctrlStates, vector<int> targs, cu_qcomp* flatMatrElems, bool applyAdj) {
 
     // this funciton is called 'subA' instead of just 'sub', because it is also called in 
     // the one-target case whereby it is strictly the embarrassingly parallel _subA scenario
-
-    // do not adjoint matrix
-    int adj = 0;
 
     // use automatic workspace management
     void* work = nullptr;
@@ -211,7 +211,7 @@ void cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(Qureg qureg, vector<int> 
     CUDA_CHECK( custatevecApplyMatrix(
         config.handle, 
         toCuQcomps(qureg.gpuAmps), CUQUANTUM_QCOMP, qureg.logNumAmpsPerNode, 
-        flatMatrElems, CUQUANTUM_QCOMP, CUSTATEVEC_MATRIX_LAYOUT_ROW, adj, 
+        flatMatrElems, CUQUANTUM_QCOMP, CUSTATEVEC_MATRIX_LAYOUT_ROW, applyAdj, 
         targs.data(), targs.size(),
         ctrls.data(), ctrlStates.data(), ctrls.size(), 
         CUSTATEVEC_COMPUTE_DEFAULT,
@@ -262,7 +262,7 @@ void cuquantum_densmatr_oneQubitDephasing_subA(Qureg qureg, int qubit, qreal pro
     cu_qcomp a = {1,        0};
     cu_qcomp b = {1-2*prob, 0};
     cu_qcomp elems[] = {a, b, b, a};
-    vector<int> targs {qubit, qubit + qureg.numQubits};
+    vector<int> targs {qubit, util_getBraQubit(qubit,qureg)};
 
     bool conj = false;
     cuquantum_statevec_anyCtrlAnyTargDiagMatr_sub(qureg, {}, {}, targs, elems, conj);
@@ -299,7 +299,7 @@ void cuquantum_densmatr_twoQubitDephasing_subA(Qureg qureg, int qubitA, int qubi
     cu_qcomp a = {1,          0};
     cu_qcomp b = {1-4*prob/3, 0};
     cu_qcomp elems[] = {a,b,b,b, b,a,b,b, b,b,a,b, b,b,b,a};
-    vector<int> targs {qubitA, qubitB, qubitA + qureg.numQubits, qubitB + qureg.numQubits};
+    vector<int> targs {qubitA, qubitB, util_getBraQubit(qubitA,qureg), util_getBraQubit(qubitB,qureg)};
 
     bool conj = false;
     cuquantum_statevec_anyCtrlAnyTargDiagMatr_sub(qureg, {}, {}, targs, elems, conj);

@@ -1,7 +1,7 @@
 # @author Oliver Thomson Brown
 # @author Erich Essmann (patches including MSVC support)
-# @author Tyson Jones (patches including clang multithreading)
-# @author Luc Jaulmes (patching install)
+# @author Tyson Jones (centralising macros, doc, patches including clang multithreading)
+# @author Luc Jaulmes (NUMA awareness, patching install)
 #
 # Contributions to previous builds from:
 #  - Ania Brown
@@ -13,17 +13,31 @@
 #  - Christopher J. Anders
 #  - Drew Silcock
 
+
+
+# ============================
+# Project
+# ============================
+
+
 cmake_minimum_required(VERSION 3.21)
 
+
 project(QuEST
-  VERSION 4.1.0
+  VERSION 4.2.0
   DESCRIPTION "Quantum Exact Simulation Toolkit"
   LANGUAGES CXX C
 )
 
+
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
-## Dependencies
+
+
+# ============================
+# Dependencies
+# ============================
+
 
 # GNUInstallDirs to provide sensible default install directory names
 cmake_path(SET ORG_INSTALL_PATH NORMALIZE "${CMAKE_INSTALL_PREFIX}")
@@ -31,12 +45,18 @@ cmake_path(APPEND CMAKE_INSTALL_PREFIX "quest")
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+
 # Maths
 if (NOT WIN32)
   find_library(MATH_LIBRARY m REQUIRED)
 endif()
 
-## Configuration options
+
+
+# ============================
+# Obtain options
+# ============================
+
 
 # Build type
 # Default to "Release"
@@ -52,10 +72,12 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
+
 # Library type
 # Shared library by default
 option(BUILD_SHARED_LIBS "Build shared library. Turned ON by default." ON)
 message(STATUS "Shared library is turned ${BUILD_SHARED_LIBS}. Set BUILD_SHARED_LIBS to modify.")
+
 
 # Library naming
 set(LIB_NAME QuEST 
@@ -67,21 +89,6 @@ message(STATUS "Library will be named lib${LIB_NAME}. Set LIB_NAME to modify.")
 
 option(VERBOSE_LIB_NAME "Modify library name based on compilation configuration. Turned OFF by default." OFF)
 message(STATUS "Verbose library naming is turned ${VERBOSE_LIB_NAME}. Set VERBOSE_LIB_NAME to modify.")
-
-if (VERBOSE_LIB_NAME)
-  # Same headers will be used for several verbosely-named libraries
-  set(MULTI_LIB_HEADERS 1)
-  function(compile_option VAR VALUE)
-    target_compile_definitions(QuEST PUBLIC ${VAR}=${VALUE})
-  endfunction()
-else()
-  # Headers will be used for a single library with a single valid configuration
-  set(MULTI_LIB_HEADERS 0)
-  function(compile_option VAR VALUE)
-    target_compile_definitions(QuEST PRIVATE ${VAR}=${VALUE})
-    set(${VAR} ${VALUE})
-  endfunction()
-endif()
 
 
 # Precision
@@ -97,9 +104,6 @@ set_property(CACHE FLOAT_PRECISION PROPERTY STRINGS
 )
 message(STATUS "Precision set to ${FLOAT_PRECISION}. Set FLOAT_PRECISION to modify.")
 
-if (VERBOSE_LIB_NAME)
-  string(CONCAT LIB_NAME ${LIB_NAME} "-fp${FLOAT_PRECISION}")
-endif()
 
 # Examples
 option(
@@ -108,6 +112,7 @@ option(
   OFF
 )
 message(STATUS "Examples are turned ${BUILD_EXAMPLES}. Set BUILD_EXAMPLES to modify.")
+
 
 # Testing
 option(
@@ -123,64 +128,6 @@ option(
   ON
 )
 
-string(CONCAT DESCRIPTON_OF_TEST_MAX_NUM_QUBIT_PERMUTATIONS  # for multiline description
-  "The maximum number of control and target qubit permutations under which to unit test each function. "
-  "Set to 0 (default) to test all permutations, or to a positive integer (e.g. 50) to accelerate the unit tests. "
-  "This is used to accelerate the v4 unit tests, and has no effect when ENABLE_TESTING is OFF, nor on the v3 deprecated tests."
-)
-set(TEST_MAX_NUM_QUBIT_PERMUTATIONS 0
-  CACHE 
-  STRING 
-  "${DESCRIPTON_OF_TEST_MAX_NUM_QUBIT_PERMUTATIONS}"
-)
-if (ENABLE_TESTING)
-  set(PERM_STRING "${TEST_MAX_NUM_QUBIT_PERMUTATIONS} random")
-  if (TEST_MAX_NUM_QUBIT_PERMUTATIONS EQUAL 0)
-    set(PERM_STRING "all")
-  endif()
-  message(STATUS "Tests will use ${PERM_STRING} qubit permutations. Set TEST_MAX_NUM_QUBIT_PERMUTATIONS to modify.")
-endif()
-
-string(CONCAT DESCRIPTON_OF_TEST_MAX_NUM_SUPEROP_TARGETS  # for multiline description
-  "The maximum number of superoperator targets for which to unit test functions mixKrausMap and mixSuperOp. "
-  "This is computationally equivalent to simulating unitaries with double the number of targets upon a density matrix. "
-  "Set to 0 to test all sizes which is likely prohibitively slow, or to a positive integer (e.g. the default of 4) to accelerate the unit tests. "
-  "This is used to accelerate the v4 unit tests, and has no effect when ENABLE_TESTING is OFF, nor on the v3 deprecated tests."
-)
-set(TEST_MAX_NUM_SUPEROP_TARGETS 4
-  CACHE 
-  STRING 
-  "${DESCRIPTON_OF_TEST_MAX_NUM_SUPEROP_TARGETS}"
-)
-if (ENABLE_TESTING)
-  set(PERM_STRING "${TEST_MAX_NUM_SUPEROP_TARGETS} random")
-  if (TEST_MAX_NUM_SUPEROP_TARGETS EQUAL 0)
-    set(PERM_STRING "all")
-  endif()
-  message(STATUS "Tests will use superoperators of up to ${PERM_STRING} qubits. Set TEST_MAX_NUM_SUPEROP_TARGETS to modify.")
-endif()
-
-set(TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS 10
-  CACHE 
-  STRING 
-  "The number of times (minimum=1) to repeat each mixed-deployment unit test for each deployment combination."
-)
-if (ENABLE_TESTING)
-  if (TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS LESS_EQUAL 0)
-    message(FATAL_ERROR "Cannot set TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS <= 0. Must be at least 1.")
-  endif()
-  message(STATUS "Tests will repeat each mixed-deployment unit test ${TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS} times. Set TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS to modify.")
-endif()
-
-string(CONCAT DESCRIPTION_OF_TEST_ALL_DEPLOYMENTS  # for multiline description
-  "Whether unit tests will be run using all possible deployment combinations (i.e. OpenMP, CUDA, MPI) in-turn (ON), "
-  "or only once using all available deployments simultaneously (OFF). Turned ON by default. "
-  "This is used to accelerate the v4 unit tests, and has no effect when ENABLE_TESTING is OFF, nor on the v3 deprecated tests."
-)
-option(TEST_ALL_DEPLOYMENTS "${DESCRIPTION_OF_TEST_ALL_DEPLOYMENTS}" ON)
-if (ENABLE_TESTING)
-  message(STATUS "Testing all deployments is turned ${TEST_ALL_DEPLOYMENTS}. Set TEST_ALL_DEPLOYMENTS to modify.")
-endif()
 
 # Multithreading
 option(
@@ -190,6 +137,7 @@ option(
 )
 message(STATUS "Multithreading is turned ${ENABLE_MULTITHREADING}. Set ENABLE_MULTITHREADING to modify.")
 
+
 # Distribution
 option(
   ENABLE_DISTRIBUTION 
@@ -197,6 +145,7 @@ option(
   OFF
 )
 message(STATUS "Distribution is turned ${ENABLE_DISTRIBUTION}. Set ENABLE_DISTRIBUTION to modify.")
+
 
 # GPU Acceleration
 option(
@@ -206,14 +155,12 @@ option(
 )
 message(STATUS "NVIDIA GPU acceleration is turned ${ENABLE_CUDA}. Set ENABLE_CUDA to modify.")
 
-if (ENABLE_CUDA)
-  option(
-    ENABLE_CUQUANTUM
-    "Whether QuEST will be built with support for NVIDIA CuQuantum. Turned OFF by default."
-    OFF
-  )
-  message(STATUS "CuQuantum support is turned ${ENABLE_CUQUANTUM}. Set ENABLE_CUQUANTUM to modify.")
-endif()
+option(
+  ENABLE_CUQUANTUM
+  "Whether QuEST will be built with support for NVIDIA cuQuantum. Turned OFF by default."
+  OFF
+)
+message(STATUS "CuQuantum support is turned ${ENABLE_CUQUANTUM}. Set ENABLE_CUQUANTUM to modify.")
 
 option(
   ENABLE_HIP
@@ -222,23 +169,6 @@ option(
 )
 message(STATUS "AMD GPU acceleration is turned ${ENABLE_HIP}. Set ENABLE_HIP to modify.")
 
-# Throw on disallowed combinations
-if (ENABLE_CUDA AND ENABLE_HIP)
-  message(FATAL_ERROR "QuEST cannot support CUDA and HIP simultaneously.")
-endif()
-
-if ((ENABLE_CUDA OR ENABLE_HIP) AND FLOAT_PRECISION STREQUAL 4)
-  message(FATAL_ERROR "Quad precision is not supported on GPU. Please disable GPU acceleration or lower precision.")
-endif()
-
-option(
-  PERMIT_NODES_TO_SHARE_GPU
-  "Whether to permit multiple distributed nodes to share a single GPU at the detriment of performance. Turned OFF by default."
-  OFF
-)
-if (ENABLE_DISTRIBUTION AND (ENABLE_CUDA OR ENABLE_HIP))
-  message(STATUS "Permitting nodes to share GPUs is turned ${PERMIT_NODES_TO_SHARE_GPU}. Set PERMIT_NODES_TO_SHARE_GPU to modify.")
-endif()
 
 # Deprecated API
 option(
@@ -248,35 +178,114 @@ option(
 )
 message(STATUS "Deprecated API support is turned ${ENABLE_DEPRECATED_API}. Set ENABLE_DEPRECATED_API to modify.")
 
-# Windows Specific Options
+option(
+  DISABLE_DEPRECATION_WARNINGS
+  "Whether to disable compile-time warnings ordinarily triggered by use of the deprecated API. Turned OFF by default."
+  OFF
+)
+message(STATUS "Disabling of deprecated API warnings is turned ${DISABLE_DEPRECATION_WARNINGS}. Set DISABLE_DEPRECATION_WARNINGS to modify.")
+
+
+
+# ============================
+# Validate options
+# ============================
+
+
+if (ENABLE_CUDA AND ENABLE_HIP)
+  message(FATAL_ERROR "QuEST cannot support CUDA and HIP simultaneously.")
+endif()
+
+
+if ((ENABLE_CUDA OR ENABLE_HIP) AND FLOAT_PRECISION STREQUAL 4)
+  message(FATAL_ERROR "Quad precision is not supported on GPU. Please disable GPU acceleration or lower precision.")
+endif()
+
+
+if (ENABLE_CUQUANTUM AND NOT ENABLE_CUDA)
+  message(FATAL_ERROR "Use of cuQuantum requires CUDA.")
+endif()
+
+
 if(WIN32)
   
   # Force MSVC to export all symbols in a shared library, like GCC and clang
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  if (ENABLE_TESTING)
+
+  if (ENABLE_TESTING AND BUILD_SHARED_LIBS)
+    message(WARNING "Compiling the tests on Windows requires BUILD_SHARED_LIBS=OFF which we now force.")
     set(BUILD_SHARED_LIBS OFF)
   endif()
+
+  if (ENABLE_DEPRECATED_API)
+    message(FATAL_ERROR "The deprecated API is not compatible with MSVC.")
+  endif()
+
 endif()
 
-## Library
+
+
+# ============================
+# Extend verbose library name
+# ============================
+
+
+if (VERBOSE_LIB_NAME)
+
+  string(CONCAT LIB_NAME ${LIB_NAME} "-fp${FLOAT_PRECISION}")
+
+  if (ENABLE_MULTITHREADING)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+mt")
+  endif()
+
+  if (ENABLE_DISTRIBUTION)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+mpi")
+  endif()
+
+  if (ENABLE_CUDA)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+cuda")
+  endif()
+
+  if (ENABLE_HIP)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+hip")
+  endif()
+
+  if (ENABLE_CUQUANTUM)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+cuquantum")
+  endif()
+
+  if (ENABLE_DEPRECATED_API)
+    string(CONCAT LIB_NAME ${LIB_NAME} "+depr")
+  endif()
+
+endif()
+
+
+
+# ============================
+# Library
+# ============================
+
 
 add_library(QuEST)
 
 # Add namespaced alias to support inclusion of QuEST as a subproject
 add_library(QuEST::QuEST ALIAS QuEST)
 
+
 # Set include directories
 target_include_directories(QuEST
-        PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/quest/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/quest/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 set_target_properties(QuEST PROPERTIES
-        VERSION     ${PROJECT_VERSION}
-        SOVERSION   ${PROJECT_VERSION_MAJOR}
+  VERSION     ${PROJECT_VERSION}
+  SOVERSION   ${PROJECT_VERSION_MAJOR}
 )
+
 
 # Add required C and C++ standards.
 # Note the QuEST interface(s) require only C11 and C++14, 
@@ -292,6 +301,7 @@ target_compile_features(QuEST
   cxx_std_17
 )
 
+
 # Turn on all compiler warnings
 if (MSVC)
   set(WARNING_FLAG /W4)
@@ -306,9 +316,13 @@ target_compile_options(QuEST
 )
 
 
-# Set user options
-compile_option(FLOAT_PRECISION ${FLOAT_PRECISION})
 
+# ============================
+# Link optional dependencies
+# ============================
+
+
+# OpenMP
 if (ENABLE_MULTITHREADING)
 
   # find OpenMP, but fail gracefully...
@@ -318,21 +332,16 @@ if (ENABLE_MULTITHREADING)
   if (NOT OpenMP_FOUND)
     set(ErrorMsg "Could not find OpenMP, necessary for enabling multithreading.")
     if (APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      string(APPEND ErrorMsg " Try first calling `brew install libomp` then `export OpenMP_ROOT=$(brew --prefix)/opt/libomp`")
+      string(APPEND ErrorMsg " Try first calling \n\tbrew install libomp\nthen\n\texport OpenMP_ROOT=$(brew --prefix)/opt/libomp")
     endif()
     message(FATAL_ERROR ${ErrorMsg})
   endif()
 
-  compile_option(COMPILE_OPENMP 1)
   target_link_libraries(QuEST
     PRIVATE
     OpenMP::OpenMP_CXX
     OpenMP::OpenMP_C
   )
-
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+mt")
-  endif()
 
 else()
 
@@ -341,25 +350,47 @@ else()
     target_compile_options(QuEST PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wno-unknown-pragmas>)
   endif()
   
-  compile_option(COMPILE_OPENMP 0)
 endif()
 
+
+# NUMA (only relevant when multithreading)
+if (ENABLE_MULTITHREADING)
+
+  # Find NUMA - location of NUMA headers
+  if (WIN32)
+    set(NUMA_AWARE 0)
+    message(WARNING "Building on Windows, QuEST will not be aware of numa locality")
+  else()
+    include(FindPkgConfig)
+    pkg_search_module(NUMA numa IMPORTED_TARGET GLOBAL)
+    if (${NUMA_FOUND})
+      set(NUMA_AWARE ${NUMA_FOUND})
+      target_link_libraries(QuEST PRIVATE PkgConfig::NUMA)
+      message(STATUS "NUMA awareness is enabled.")
+    else()
+      set(NUMA_AWARE 0)
+      message(WARNING "libnuma not found, QuEST will not be aware of numa locality")
+    endif()
+  endif()
+
+else()
+  set(NUMA_AWARE 0)
+endif()
+
+
+# MPI
 if (ENABLE_DISTRIBUTION)
   find_package(MPI REQUIRED
     COMPONENTS CXX
   )
-  compile_option(COMPILE_MPI 1)
   target_link_libraries(QuEST
     PRIVATE
     MPI::MPI_CXX
   )
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+mpi")
-  endif()
-else()
-  compile_option(COMPILE_MPI 0)
 endif()
 
+
+# CUDA
 if (ENABLE_CUDA)
 
   # make nvcc use user cxx-compiler as default host (before cuda-host is set below)
@@ -369,28 +400,13 @@ if (ENABLE_CUDA)
 
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-  
-  set_property(TARGET QuEST PROPERTY CUDA_STANDARD 20)
-  
   set(CUDA_PROPAGATE_HOST_FLAGS OFF)
   
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+cuda")
-  endif()
+  set_property(TARGET QuEST PROPERTY CUDA_STANDARD 20)
 endif()
 
-if (ENABLE_CUQUANTUM)
-  find_package(CUQUANTUM REQUIRED)
-  compile_option(COMPILE_CUQUANTUM 1)
-  target_link_libraries(QuEST PRIVATE CUQUANTUM::cuStateVec)
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+cuquantum")
-  endif()
-else()
-  compile_option(COMPILE_CUQUANTUM 0)
-endif()
 
+# HIP
 if (ENABLE_HIP)
 
   # if generation fails (hip::amdhip64 not found), users can try setting
@@ -408,38 +424,119 @@ if (ENABLE_HIP)
   find_package(HIP REQUIRED)
   message(STATUS "Found HIP: " ${HIP_VERSION})
 
-  compile_option(COMPILE_CUQUANTUM 0)
   target_link_libraries(QuEST PRIVATE hip::host)
 
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+hip")
-  endif()
 endif()
 
+
+# cuQuantum
+if (ENABLE_CUQUANTUM)
+  find_package(CUQUANTUM REQUIRED)
+  target_link_libraries(QuEST PRIVATE CUQUANTUM::cuStateVec)
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+endif()
+
+
+
+# ===============================
+# Set options to save in config.h
+# ===============================
+
+
+# set vars which will be written to config.h.in (auto-converted to 0 or 1)
+set(COMPILE_OPENMP ${ENABLE_MULTITHREADING})
+set(COMPILE_MPI ${ENABLE_DISTRIBUTION})
+set(COMPILE_CUQUANTUM ${ENABLE_CUQUANTUM})
+set(INCLUDE_DEPRECATED_FUNCTIONS ${ENABLE_DEPRECATED_API})
+
+
+# (for the love of God cmake, create a concise syntax for this)
 if (ENABLE_CUDA OR ENABLE_HIP)
-  compile_option(COMPILE_CUDA 1)
+  set(COMPILE_CUDA 1)
 else()
-  compile_option(COMPILE_CUDA 0)
+  set(COMPILE_CUDA 0)
 endif()
 
-if (ENABLE_DEPRECATED_API)
-  target_compile_definitions(QuEST PRIVATE INCLUDE_DEPRECATED_FUNCTIONS=1)
 
-  if (VERBOSE_LIB_NAME)
-    string(CONCAT LIB_NAME ${LIB_NAME} "+depr")
+# these vars are already set, but repeated here for clarity
+set(FLOAT_PRECISION ${FLOAT_PRECISION})
+set(NUMA_AWARE ${NUMA_AWARE})
+set(DISABLE_DEPRECATION_WARNINGS ${DISABLE_DEPRECATION_WARNINGS})
+
+
+# these do not appear in src but are saved for record-keeping in config.h.in
+set(COMPILE_HIP ${ENABLE_HIP})
+
+
+
+# ============================
+# Patch CPU performance
+# ============================
+
+
+# Patch performance of CPU std::complex arithmetic operator overloads.
+# The cpu_subroutines.cpp file makes extensive use of std::complex operator
+# overloads, and alas these are significantly slower than hand-rolled 
+# arithmetic, due to their NaN and inf checks, and interference with SIMD.
+# It is crucial to pass additional optimisation flags to this file to restore
+# hand-rolled performance (else QuEST v3 is faster than v4 eep). In theory,
+# we can achieve this with specific, relatively 'safe' flags such as LLVM's:
+#     -ffinite-math-only -fno-signed-zeros -ffp-contract=fast
+# However, it is a nuisance to find equivalent flags for different compilers
+# and monitor their performance vs accuracy trade-offs. So instead, we use the
+# much more aggressive and ubiquitous -Ofast flag to guarantee performance. 
+# This introduces many potentially dangerous optimisations, such as asserting
+# associativity of flops, which would break techniques like Kahan summation.
+# The cpu_subroutines.cpp must ergo be very conscious of these optimisations.
+# We here also explicitly inform the file cpu_subroutines.cpp whether or not
+# we are passing the flags, so it can detect/error when flags are forgotten.
+
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+
+  # Release build will pass -Ofast when known for the given compiler, and
+  # fallback to giving a performance warning and proceeding with compilation
+
+  if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|Cray|CrayClang|GNU|HP|Intel|IntelLLVM|NVHPC|NVIDIA|XL|XLClang")
+    set(patch_flags "-Ofast")
+    set(patch_macro "-DCOMPLEX_OVERLOADS_PATCHED=1")
+  elseif (CMAKE_CXX_COMPILER_ID MATCHES "HP")
+    set(patch_flags "+Ofast")
+    set(patch_macro "-DCOMPLEX_OVERLOADS_PATCHED=1")
+  elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    set(patch_flags "/fp:fast")
+    set(patch_macro "-DCOMPLEX_OVERLOADS_PATCHED=1")
+  else()
+    message(WARNING 
+      "The compiler (${CMAKE_CXX_COMPILER_ID}) is unrecognised and so crucial optimisation flags have not been "
+      "passed to the CPU backend. These flags are necessary for full performance when performing complex algebra, "
+      "otherwise a slowdown of 3-50x may be observed. Please edit the root CMakeLists.txt to include flags which are "
+      "equivalent to GNU's -Ofast flag for your compiler (search this warning), or contact the QuEST developers for help."
+    )
+    set(patch_flags "")
+    set(patch_macro "-DCOMPLEX_OVERLOADS_PATCHED=0")
   endif()
-
+  
 else()
-  target_compile_definitions(QuEST PRIVATE INCLUDE_DEPRECATED_FUNCTIONS=0)
+
+  # Non-release builds (e.g. Debug) will pass no optimisation flags, and will
+  # communicate to cpu_subroutines.cpp that this is intentional via a macro
+
+  set(patch_flags "")
+  set(patch_macro "-DCOMPLEX_OVERLOADS_PATCHED=0")
+
 endif()
 
+set_source_files_properties(
+  quest/src/cpu/cpu_subroutines.cpp
+  PROPERTIES
+  COMPILE_FLAGS "${patch_flags} ${patch_macro}"
+)
 
-if (ENABLE_DISTRIBUTION AND (ENABLE_CUDA OR ENABLE_HIP))
-  target_compile_definitions(
-    QuEST PRIVATE 
-    PERMIT_NODES_TO_SHARE_GPU=$<IF:$<BOOL:${PERMIT_NODES_TO_SHARE_GPU}>,1,0>
-  )
-endif()
+
+
+# ============================
+# Pass files to library
+# ============================
 
 
 # add math library
@@ -447,14 +544,22 @@ if (NOT MSVC)
   target_link_libraries(QuEST PRIVATE ${MATH_LIBRARY})
 endif()
 
+
 # Set output name
 set_target_properties(QuEST PROPERTIES OUTPUT_NAME ${LIB_NAME})
+
 
 # Add source files
 add_subdirectory(quest)
 
-## Examples
 
+
+# ============================
+# Examples
+# ============================
+
+
+# min example is always built
 add_executable(min_example
   examples/tutorials/min_example.c
 )
@@ -465,9 +570,12 @@ install(TARGETS min_example
   DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+
+# all examples optionally built
 if (BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
+
 
 ## RATH
 set(BUILD_RPATH_USE_ORIGIN ON)
@@ -492,14 +600,24 @@ endfunction()
 
 setup_quest_rpath(QuEST)
 setup_quest_rpath(min_example)
-## User Source
 
+
+
+# ============================
+# User source
+# ============================
+
+
+# validate
 if (USER_SOURCE AND NOT OUTPUT_EXE)
     message(SEND_ERROR "USER_SOURCE specified, but not OUTPUT_EXE.")
 endif()
 if (OUTPUT_EXE AND NOT USER_SOURCE)
     message(SEND_ERROR "OUTPUT_EXE specified, but not USER_SOURCE.")
 endif()
+
+
+# compile user source
 if (USER_SOURCE AND OUTPUT_EXE)
   message(STATUS "Compiling ${USER_SOURCE} to executable ${OUTPUT_EXE}.")
 
@@ -510,14 +628,19 @@ if (USER_SOURCE AND OUTPUT_EXE)
 endif()
 
 
-## Tests
+
+# ============================
+# Tests
+# ============================
+
 
 if (ENABLE_TESTING)
 
+  # try find Catch2
   set(CatchVersion 3.8.0)
-
   find_package(Catch2 ${CatchVersion} QUIET)
 
+  # else try download Catch2
   if (NOT TARGET Catch2::Catch2 AND DOWNLOAD_CATCH2)
     message(STATUS "Catch2 not found, it will be downloaded and built in the build directory.")
     Include(FetchContent)
@@ -530,6 +653,7 @@ if (ENABLE_TESTING)
     
     FetchContent_MakeAvailable(Catch2)
   
+  # otherwise fail
   else()
     # We won't magically find it here, but this is the easiest way to
     # a) Force the build to fail, and
@@ -537,56 +661,74 @@ if (ENABLE_TESTING)
     find_package(Catch2 ${CatchVersion} REQUIRED)
   endif()
 
+  # compile tests
   include(Catch)
   enable_testing()
   add_subdirectory(tests)
 endif()
 
-## Install
+
+
+# ============================
+# Installation
+# ============================
+
 
 install(TARGETS QuEST
-        EXPORT QuESTTargets
-        LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
+  EXPORT QuESTTargets
+  LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-## Export
+
 # Write CMake version file for QuEST
 set(QuEST_INSTALL_CONFIGDIR "${CMAKE_INSTALL_LIBDIR}/cmake/QuEST")
 
+
 # Write QuESTConfigVersion.cmake
 write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}ConfigVersion.cmake"
-        VERSION ${PROJECT_VERSION}
-        COMPATIBILITY AnyNewerVersion
+  "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}ConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY AnyNewerVersion
 )
+
 
 # Configure QuESTConfig.cmake (from template)
 configure_package_config_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QuESTConfig.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}Config.cmake"
-        INSTALL_DESTINATION "${QuEST_INSTALL_CONFIGDIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QuESTConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}Config.cmake"
+  INSTALL_DESTINATION "${QuEST_INSTALL_CONFIGDIR}"
 )
+
 
 # Install them
 install(FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}Config.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}ConfigVersion.cmake"
-        DESTINATION "${QuEST_INSTALL_CONFIGDIR}"
+  "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}Config.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/${LIB_NAME}ConfigVersion.cmake"
+  DESTINATION "${QuEST_INSTALL_CONFIGDIR}"
 )
 
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/quest.h"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+install(FILES 
+  "${CMAKE_CURRENT_SOURCE_DIR}/quest/include/quest.h"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
 
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/quest/include"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/quest"
-        FILES_MATCHING PATTERN "*.h"
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/quest/include/config.h"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/quest/include"
 )
 
-install(EXPORT QuESTTargets
-        FILE "${LIB_NAME}Targets.cmake"
-        NAMESPACE QuEST::
-        DESTINATION "${QuEST_INSTALL_CONFIGDIR}"
+install(
+  DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/quest/include"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/quest"
+  FILES_MATCHING PATTERN "*.h"
+  PATTERN "quest.h" EXCLUDE
+)
+
+install(
+  EXPORT QuESTTargets
+  FILE "${LIB_NAME}Targets.cmake"
+  NAMESPACE QuEST::
+  DESTINATION "${QuEST_INSTALL_CONFIGDIR}"
 )

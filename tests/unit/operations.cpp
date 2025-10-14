@@ -1,5 +1,6 @@
 /** @file
- * Unit tests of the operations module. Beware that because the 
+ * Unit tests of both multiplication and operations modules, since
+ * they use inextricable testing logic. Beware that because the 
  * operation functions have so much interface and test-semantic 
  * overlap (e.g. the logic of control qubits, of control-states,
  * of density matrix variants), this file has opted to make 
@@ -13,6 +14,9 @@
  * 
  * @defgroup unitops Operations
  * @ingroup unittests
+ * 
+ * @defgroup unitmult Multiplication
+ * @ingroup unittests
  */
 
 #include "quest.h"
@@ -22,6 +26,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
 
+#include "tests/utils/config.hpp"
 #include "tests/utils/cache.hpp"
 #include "tests/utils/qvector.hpp"
 #include "tests/utils/qmatrix.hpp"
@@ -40,13 +45,22 @@ using std::tuple;
 using Catch::Matchers::ContainsSubstring;
 
 
+/*
+ * INTERNAL QUEST FUNCITONS
+ */
+
+extern int paulis_getPauliAt(PauliStr str, int ind);
+
 
 /*
  * UTILITIES
  */
 
-#define TEST_CATEGORY \
+#define TEST_CATEGORY_OPS \
     LABEL_UNIT_TAG "[operations]"
+
+#define TEST_CATEGORY_MULT \
+    LABEL_UNIT_TAG "[multiplication]"
 
 
 /*
@@ -200,7 +214,7 @@ void TEST_ON_CACHED_QUREG_AND_MATRIX(quregCache quregs, matrixCache matrices, au
  * - applyDiagMatrPower:    diagpower
  * - applyCompMatr:         compmatr
  * - applyPauliStr:         paulistr
- * - applyPauliGadgt:       pauligad
+ * - applyPauliGadget:      pauligad
 */
 
 enum ArgsFlag { none, scalar, axisrots, diagmatr, diagpower, compmatr, paulistr, pauligad };
@@ -581,6 +595,25 @@ qmatrix getReferenceMatrix(auto matrixRefGen, vector<int> targs, auto additional
 
 
 /*
+ * Template parameters which specify how the reference 
+ * operatorshould be applied upon the reference state. 
+ * Let |psi> be a statevector, rho be a density matrix, 
+ * and matr be an operator matrix. The options perform:
+ * 
+ * apply:     |psi> -> matr |psi>,  rho -> matr rho adj(matr)
+ * leftapply: |psi> -> matr |psi>,  rho -> matr rho
+ * rightapply:                      rho -> rho matr
+ * 
+ * Note this is necessarily a template parameter (rather
+ * than just a runtime parameter) only because the
+ * rightapplyReferenceOperator() function is defined
+ * only upon qmatrix (for density matrices)
+ */
+
+enum ApplyFlag { apply, leftapply, rightapply };
+
+
+/*
  * display all/only relevant inputs given to an 
  * API operation when its subsequent test fails.
  * This is like a customisation of CAPTURE, although
@@ -601,8 +634,6 @@ std::string toString(vector<int> list) {
     out += "}";
     return out;
 }
-
-extern int paulis_getPauliAt(PauliStr str, int ind);
 
 std::string toString(PauliStr str, vector<int> targs) {
 
@@ -680,8 +711,8 @@ void CAPTURE_RELEVANT( vector<int> ctrls, vector<int> states, vector<int> targs,
  * matrixRefGen) is formatted.
  */
 
-template <NumQubitsFlag Ctrls, NumQubitsFlag Targs, ArgsFlag Args>
-void testOperationCorrectness(auto operation, auto matrixRefGen, bool multiplyOnly) {
+template <NumQubitsFlag Ctrls, NumQubitsFlag Targs, ArgsFlag Args, ApplyFlag Apply>
+void testOperationCorrectness(auto operation, auto matrixRefGen) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -723,18 +754,25 @@ void testOperationCorrectness(auto operation, auto matrixRefGen, bool multiplyOn
         auto allArgs = std::tuple_cat(tuple{operation, qureg}, primaryArgs, furtherArgs);
         std::apply(apiFunc, allArgs);
 
-        // update reference state
-        (multiplyOnly)?
-            multiplyReferenceOperator(stateRef, ctrls, states, targs, matrixRef):
-            applyReferenceOperator(stateRef, ctrls, states, targs, matrixRef);
+        // update reference state (ctrls & states happen to only ever be used by apply)
+        if constexpr (Apply == apply)        applyReferenceOperator(       stateRef, ctrls, states, targs, matrixRef);
+        if constexpr (Apply == leftapply)     leftapplyReferenceOperator(    stateRef, ctrls, states, targs, matrixRef);
+        if constexpr (Apply == rightapply) rightapplyReferenceOperator(stateRef, ctrls, states, targs, matrixRef);
     };
 
     // report operation's input parameters if any subsequent test fails
     CAPTURE_RELEVANT<Ctrls,Targs,Args>( ctrls, states, targs, furtherArgs );
 
-    // test API operation on all available deployment combinations (e.g. OMP, MPI, MPI+GPU, etc)
-    SECTION( LABEL_STATEVEC ) { TEST_ON_CACHED_QUREGS(statevecQuregs, statevecRef, testFunc); }
-    SECTION( LABEL_DENSMATR ) { TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc); }
+    // test API operation on all available deployment combinations (e.g. OMP, MPI, MPI+GPU, etc),
+    // though the postMultiply*() functions do not accept statevectors
+    if constexpr (Apply != rightapply) {
+        SECTION( LABEL_STATEVEC ) { 
+            TEST_ON_CACHED_QUREGS(statevecQuregs, statevecRef, testFunc); 
+        }
+    }
+    SECTION( LABEL_DENSMATR ) { 
+        TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc);
+    }
 
     // free any heap-alloated API matrices and restore epsilon
     freeRemainingArgs<Targs,Args>(furtherArgs);
@@ -785,11 +823,11 @@ auto getFixedRemainingArgs(vector<int> targs) {
     if constexpr (Args == pauligad)  return tuple{ getPauliStr("XXX", targs), 0 }; // (XXX, angle)
 }
 
-template <NumQubitsFlag Ctrls, NumQubitsFlag Targs, ArgsFlag Args>
-void testOperationValidation(auto operation, bool multiplyOnly) {
+template <NumQubitsFlag Ctrls, NumQubitsFlag Targs, ArgsFlag Args, ApplyFlag Apply>
+void testOperationValidation(auto operation) {
 
-    // use any cached Qureg
-    Qureg qureg = getCachedStatevecs().begin()->second;
+    // use any cached Qureg (though postMultiply*() functions accept only density matrices)
+    Qureg qureg = getCachedDensmatrs().begin()->second;
 
     // in lieu of preparing random inputs like testOperationCorrectness()
     // above, we instead obtain simple, fixed, compatible inputs
@@ -962,7 +1000,7 @@ void testOperationValidation(auto operation, bool multiplyOnly) {
             return;
 
         // which enforce unitarity
-        if (multiplyOnly)
+        if (Apply != apply)
             return;
 
         if constexpr (Args == compmatr || Args == diagmatr)
@@ -1003,6 +1041,9 @@ void testOperationValidation(auto operation, bool multiplyOnly) {
     }
 
     SECTION( "targeted amps fit in node" ) {
+
+        // simplest to trigger validation using a statevector
+        qureg = getCachedStatevecs().begin()->second;
 
         // can only be validated when environment AND qureg
         // are distributed (over more than 1 node, of course)
@@ -1049,7 +1090,7 @@ void testOperationValidation(auto operation, bool multiplyOnly) {
     SECTION( "non-unitary exponent" ) {
 
         // not relevant for functions which do not assert unitarity
-        if (multiplyOnly)
+        if (Apply != apply)
             return;
 
         if constexpr (Args == diagpower)
@@ -1064,7 +1105,7 @@ void testOperationValidation(auto operation, bool multiplyOnly) {
 
         // when being applied as a unitary, abs(elem)=1 so there's no
         // possibility of divergence (we'd merely trigger isUnitary)
-        if (!multiplyOnly)
+        if (Apply == apply)
             return;
 
         if constexpr (Args == diagpower)
@@ -1085,6 +1126,18 @@ void testOperationValidation(auto operation, bool multiplyOnly) {
             REQUIRE_THROWS_WITH( apiFunc(), ContainsSubstring("zero vector") );
     }
 
+    SECTION( "qureg type" ) {
+
+        // only postMultiply*() functions discriminate Qureg
+        if (Apply != rightapply)
+            return;
+
+        // use any statevector
+        qureg = getCachedStatevecs().begin()->second;
+
+        REQUIRE_THROWS_WITH( apiFunc(), ContainsSubstring("Expected a density matrix") );
+    }
+
     freeRemainingArgs<Targs,Args>(furtherArgs);
 }
 
@@ -1094,25 +1147,18 @@ void testOperationValidation(auto operation, bool multiplyOnly) {
  * inputs as indicated by the template flags
  */
 
-template <NumQubitsFlag Ctrls, NumQubitsFlag Targs, ArgsFlag Args>
-void testOperation(auto operation, auto matrixRefGen, bool multiplyOnly) {
+template <NumQubitsFlag Ctrls, NumQubitsFlag Targs, ArgsFlag Args, ApplyFlag Apply>
+void testOperation(auto operation, auto matrixRefGen) {
 
     assertNumQubitsFlagsAreValid(Ctrls, Targs);
 
     SECTION( LABEL_CORRECTNESS ) { 
-        testOperationCorrectness<Ctrls,Targs,Args>(operation, matrixRefGen, multiplyOnly); 
+        testOperationCorrectness<Ctrls,Targs,Args,Apply>(operation, matrixRefGen); 
     }
 
     SECTION( LABEL_VALIDATION ) { 
-        testOperationValidation<Ctrls,Targs,Args>(operation, multiplyOnly); 
+        testOperationValidation<Ctrls,Targs,Args,Apply>(operation);
     }
-}
-
-template <NumQubitsFlag Ctrls, NumQubitsFlag Targs, ArgsFlag Args>
-void testOperation(auto operation, auto matrixRefGen) {
-
-    bool multiplyOnly = false;
-    testOperation<Ctrls,Targs,Args>(operation, matrixRefGen, multiplyOnly);
 }
 
 
@@ -1134,10 +1180,10 @@ void testOperation(auto operation, auto matrixRefGen) {
 // C-compatible version. Alas, to your imminent horror, this is.. erm...
 
 // #define TEST_ALL_CTRL_OPERATIONS( namesuffix, numtargs, argtype, matrixgen ) \
-//     TEST_CASE( "apply" #namesuffix,                     TEST_CATEGORY ) { testOperation<zero,     numtargs,argtype>( apply ## namesuffix,                     matrixgen); } \
-//     TEST_CASE( "applyControlled" #namesuffix,           TEST_CATEGORY ) { testOperation<one,      numtargs,argtype>( applyControlled ## namesuffix,           matrixgen); } \
-//     TEST_CASE( "applyMultiControlled" #namesuffix,      TEST_CATEGORY ) { testOperation<any,      numtargs,argtype>( applyMultiControlled ## namesuffix,      matrixgen); } \
-//     TEST_CASE( "applyMultiStateControlled" #namesuffix, TEST_CATEGORY ) { testOperation<anystates,numtargs,argtype>( applyMultiStateControlled ## namesuffix, matrixgen); } 
+//     TEST_CASE( "apply" #namesuffix,                     TEST_CATEGORY_OPS ) { testOperation<zero,     numtargs,argtype>( apply ## namesuffix,                     matrixgen); } \
+//     TEST_CASE( "applyControlled" #namesuffix,           TEST_CATEGORY_OPS ) { testOperation<one,      numtargs,argtype>( applyControlled ## namesuffix,           matrixgen); } \
+//     TEST_CASE( "applyMultiControlled" #namesuffix,      TEST_CATEGORY_OPS ) { testOperation<any,      numtargs,argtype>( applyMultiControlled ## namesuffix,      matrixgen); } \
+//     TEST_CASE( "applyMultiStateControlled" #namesuffix, TEST_CATEGORY_OPS ) { testOperation<anystates,numtargs,argtype>( applyMultiStateControlled ## namesuffix, matrixgen); } 
 
 
 /*
@@ -1232,14 +1278,14 @@ void testOperation(auto operation, auto matrixRefGen) {
 
 // defines a Catch2 test-case for the implied function
 #define TEST_CASE_OPERATION( namesuffix, numctrls, numtargs, argtype, matrixgen ) \
-    TEST_CASE( GET_FUNC_NAME_STR(numctrls, namesuffix), TEST_CATEGORY ) {         \
-        testOperation<numctrls, numtargs, argtype>(                               \
+    TEST_CASE( GET_FUNC_NAME_STR(numctrls, namesuffix), TEST_CATEGORY_OPS ) {         \
+        testOperation<numctrls, numtargs, argtype, apply>(                        \
             GET_CASTED_FUNC(namesuffix, numctrls, numtargs, argtype),             \
             matrixgen);                                                           \
     }
  
-// automate the testing of a function for all its controlled variants
-#define TEST_ALL_CTRL_OPERATIONS( namesuffix, numtargs, argtype, matrixgen ) \
+// automate the testing of a apply*() function for all its controlled variants
+#define TEST_ALL_CTRL_OPERATIONS( namesuffix, numtargs, argtype, matrixgen )   \
     TEST_CASE_OPERATION( namesuffix, zero,      numtargs, argtype, matrixgen ) \
     TEST_CASE_OPERATION( namesuffix, one,       numtargs, argtype, matrixgen ) \
     TEST_CASE_OPERATION( namesuffix, any,       numtargs, argtype, matrixgen ) \
@@ -1248,7 +1294,7 @@ void testOperation(auto operation, auto matrixRefGen) {
 
 
 /** 
- * TESTS
+ * OPERATOR TESTS
  * 
  * @ingroup unitops
  * @{
@@ -1288,58 +1334,27 @@ TEST_ALL_CTRL_OPERATIONS( PhaseGadget, any, scalar, VariableSizeParameterisedMat
  * non-controlled operations with no C++ overloads
  */
 
-TEST_CASE( "multiplyPauliStr",        TEST_CATEGORY ) { testOperation<zero,any,paulistr>(multiplyPauliStr,    nullptr, true); }
-TEST_CASE( "multiplyPauliGadget",     TEST_CATEGORY ) { testOperation<zero,any,pauligad>(multiplyPauliGadget, nullptr, true); }
-TEST_CASE( "multiplyCompMatr1",       TEST_CATEGORY ) { testOperation<zero,one,compmatr>(multiplyCompMatr1,   nullptr, true); }
-TEST_CASE( "multiplyCompMatr2",       TEST_CATEGORY ) { testOperation<zero,two,compmatr>(multiplyCompMatr2,   nullptr, true); }
-TEST_CASE( "multiplyDiagMatr1",       TEST_CATEGORY ) { testOperation<zero,one,diagmatr>(multiplyDiagMatr1,   nullptr, true); }
-TEST_CASE( "multiplyDiagMatr2",       TEST_CATEGORY ) { testOperation<zero,two,diagmatr>(multiplyDiagMatr2,   nullptr, true); }
-TEST_CASE( "applyPhaseFlip",          TEST_CATEGORY ) { testOperation<zero,one,none>  (applyPhaseFlip,          VariableSizeMatrices::PF(1)); }
-TEST_CASE( "applyTwoQubitPhaseFlip",  TEST_CATEGORY ) { testOperation<zero,two,none>  (applyTwoQubitPhaseFlip,  VariableSizeMatrices::PF(2)); }
-TEST_CASE( "applyPhaseShift",         TEST_CATEGORY ) { testOperation<zero,one,scalar>(applyPhaseShift,         ParameterisedMatrices::PS); }
-TEST_CASE( "applyTwoQubitPhaseShift", TEST_CATEGORY ) { testOperation<zero,two,scalar>(applyTwoQubitPhaseShift, ParameterisedMatrices::PS2); }
+TEST_CASE( "applyPhaseFlip",          TEST_CATEGORY_OPS ) { testOperation<zero,one,none,apply>  (applyPhaseFlip,          VariableSizeMatrices::PF(1)); }
+TEST_CASE( "applyTwoQubitPhaseFlip",  TEST_CATEGORY_OPS ) { testOperation<zero,two,none,apply>  (applyTwoQubitPhaseFlip,  VariableSizeMatrices::PF(2)); }
+TEST_CASE( "applyPhaseShift",         TEST_CATEGORY_OPS ) { testOperation<zero,one,scalar,apply>(applyPhaseShift,         ParameterisedMatrices::PS  ); }
+TEST_CASE( "applyTwoQubitPhaseShift", TEST_CATEGORY_OPS ) { testOperation<zero,two,scalar,apply>(applyTwoQubitPhaseShift, ParameterisedMatrices::PS2 ); }
 
 
 /*
  * non-controlled operations which have a C++ overload
  * (because they accept qubit lists which become vector),
  * and so which require explicit casting to resolve the
- * compiler ambiguity
+ * compiler ambiguity (spaghetti 4 lyf)
  */
 
-TEST_CASE( "multiplyCompMatr",  TEST_CATEGORY ) { 
-    auto func = static_cast<void(*)(Qureg, int*, int, CompMatr)>(multiplyCompMatr);
-    testOperation<zero,any,compmatr>(func, nullptr, true); 
-}
-
-TEST_CASE( "multiplyDiagMatr",  TEST_CATEGORY ) {
-    auto func = static_cast<void(*)(Qureg, int*, int, DiagMatr)>(multiplyDiagMatr);
-    testOperation<zero,any,diagmatr>(func, nullptr, true);
-}
-
-TEST_CASE( "multiplyDiagMatrPower",  TEST_CATEGORY ) {
-    auto func = static_cast<void(*)(Qureg, int*, int, DiagMatr, qcomp)>(multiplyDiagMatrPower);
-    testOperation<zero,any,diagpower>(func, nullptr, true);
-}
-
-TEST_CASE( "multiplyMultiQubitNot",  TEST_CATEGORY ) {
-    auto func = static_cast<void(*)(Qureg, int*, int)>(multiplyMultiQubitNot);
-    testOperation<zero,any,none>(func, VariableSizeMatrices::X, true);
-}
-
-TEST_CASE( "multiplyPhaseGadget",  TEST_CATEGORY ) {
-    auto func = static_cast<void(*)(Qureg, int*, int, qreal)>(multiplyPhaseGadget);
-    testOperation<zero,any,scalar>(func, VariableSizeParameterisedMatrices::Z, true);
-}
-
-TEST_CASE( "applyMultiQubitPhaseFlip",  TEST_CATEGORY ) {
+TEST_CASE( "applyMultiQubitPhaseFlip",  TEST_CATEGORY_OPS ) {
     auto func = static_cast<void(*)(Qureg, int*, int)>(applyMultiQubitPhaseFlip);
-    testOperation<zero,any,none>(func, VariableSizeMatrices::PF);
+    testOperation<zero,any,none,apply>(func, VariableSizeMatrices::PF);
 }
 
-TEST_CASE( "applyMultiQubitPhaseShift",  TEST_CATEGORY ) {
+TEST_CASE( "applyMultiQubitPhaseShift",  TEST_CATEGORY_OPS ) {
     auto func = static_cast<void(*)(Qureg, int*, int, qreal)>(applyMultiQubitPhaseShift);
-    testOperation<zero,any,scalar>(func, VariableSizeParameterisedMatrices::PS);
+    testOperation<zero,any,scalar,apply>(func, VariableSizeParameterisedMatrices::PS);
 }
 
 
@@ -1347,7 +1362,7 @@ TEST_CASE( "applyMultiQubitPhaseShift",  TEST_CATEGORY ) {
  * operations which need custom logic
  */
 
-TEST_CASE( "applyQuantumFourierTransform", TEST_CATEGORY ) {
+TEST_CASE( "applyQuantumFourierTransform", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1395,7 +1410,7 @@ TEST_CASE( "applyQuantumFourierTransform", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyFullQuantumFourierTransform", TEST_CATEGORY ) {
+TEST_CASE( "applyFullQuantumFourierTransform", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1440,7 +1455,7 @@ TEST_CASE( "applyFullQuantumFourierTransform", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyQubitProjector", TEST_CATEGORY ) {
+TEST_CASE( "applyQubitProjector", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1466,7 +1481,7 @@ TEST_CASE( "applyQubitProjector", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyMultiQubitProjector", TEST_CATEGORY ) {
+TEST_CASE( "applyMultiQubitProjector", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1492,7 +1507,7 @@ TEST_CASE( "applyMultiQubitProjector", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyForcedQubitMeasurement", TEST_CATEGORY ) {
+TEST_CASE( "applyForcedQubitMeasurement", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1531,7 +1546,7 @@ TEST_CASE( "applyForcedQubitMeasurement", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyForcedMultiQubitMeasurement", TEST_CATEGORY ) {
+TEST_CASE( "applyForcedMultiQubitMeasurement", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1577,7 +1592,7 @@ TEST_CASE( "applyForcedMultiQubitMeasurement", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyMultiQubitMeasurement", TEST_CATEGORY ) {
+TEST_CASE( "applyMultiQubitMeasurement", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1614,7 +1629,7 @@ TEST_CASE( "applyMultiQubitMeasurement", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyMultiQubitMeasurementAndGetProb", TEST_CATEGORY ) {
+TEST_CASE( "applyMultiQubitMeasurementAndGetProb", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1653,7 +1668,7 @@ TEST_CASE( "applyMultiQubitMeasurementAndGetProb", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyQubitMeasurement", TEST_CATEGORY ) {
+TEST_CASE( "applyQubitMeasurement", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1689,7 +1704,7 @@ TEST_CASE( "applyQubitMeasurement", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "applyQubitMeasurementAndGetProb", TEST_CATEGORY ) {
+TEST_CASE( "applyQubitMeasurementAndGetProb", TEST_CATEGORY_OPS ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1727,83 +1742,7 @@ TEST_CASE( "applyQubitMeasurementAndGetProb", TEST_CATEGORY ) {
 }
 
 
-TEST_CASE( "multiplyFullStateDiagMatr", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
-
-    PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
-
-    auto cachedMatrs = getCachedFullStateDiagMatrs();
-
-    SECTION( LABEL_CORRECTNESS ) {
-
-        qmatrix refMatr = getRandomDiagonalMatrix(getPow2(numQubits));
-        auto apiFunc = multiplyFullStateDiagMatr;
-
-        GENERATE( range(0, TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS) );
-
-        SECTION( LABEL_STATEVEC ) {
-
-            auto refFunc = [&] (qvector& state, qmatrix matr) { multiplyReferenceOperator(state, matr); };
-
-            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedSV, cachedMatrs, apiFunc, refSV, refMatr, refFunc);
-        }
-
-        SECTION( LABEL_DENSMATR ) {
-
-            auto refFunc = [&] (qmatrix& state, qmatrix matr) { multiplyReferenceOperator(state, matr); };
-
-            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedDM, cachedMatrs, apiFunc, refDM, refMatr, refFunc);
-        }
-    }
-
-    /// @todo input validation
-}
-
-
-TEST_CASE( "multiplyFullStateDiagMatrPower", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
-
-    PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
-
-    auto cachedMatrs = getCachedFullStateDiagMatrs();
-
-    SECTION( LABEL_CORRECTNESS ) {
-
-        qmatrix refMatr = getRandomDiagonalMatrix(getPow2(numQubits));
-        qcomp exponent = getRandomComplex();
-
-        auto apiFunc = [&](Qureg qureg, FullStateDiagMatr matr) { 
-            return multiplyFullStateDiagMatrPower(qureg, matr, exponent);
-        };
-
-        CAPTURE( exponent );
-        
-        GENERATE( range(0, TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS) );
-
-        SECTION( LABEL_STATEVEC ) {
-
-            auto refFunc = [&] (qvector& state, qmatrix matr) { 
-                matr = getPowerOfDiagonalMatrix(matr, exponent);
-                multiplyReferenceOperator(state, matr);
-            };
-
-            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedSV, cachedMatrs, apiFunc, refSV, refMatr, refFunc);
-        }
-
-        SECTION( LABEL_DENSMATR ) {
-
-            auto refFunc = [&] (qmatrix& state, qmatrix matr) { 
-                matr = getPowerOfDiagonalMatrix(matr, exponent);
-                multiplyReferenceOperator(state, matr);
-            };
-
-            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedDM, cachedMatrs, apiFunc, refDM, refMatr, refFunc);
-        }
-    }
-
-    /// @todo input validation
-}
-
-
-TEST_CASE( "applyFullStateDiagMatr", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
+TEST_CASE( "applyFullStateDiagMatr", TEST_CATEGORY_OPS LABEL_MIXED_DEPLOY_TAG ) {
 
     PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
 
@@ -1814,7 +1753,7 @@ TEST_CASE( "applyFullStateDiagMatr", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
         qmatrix refMatr = getRandomDiagonalUnitary(numQubits);
         auto apiFunc = applyFullStateDiagMatr;
 
-        GENERATE( range(0, TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS) );
+        GENERATE( range(0, getNumTestedMixedDeploymentRepetitions()) );
 
         SECTION( LABEL_STATEVEC ) {
 
@@ -1835,7 +1774,7 @@ TEST_CASE( "applyFullStateDiagMatr", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
 }
 
 
-TEST_CASE( "applyFullStateDiagMatrPower", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
+TEST_CASE( "applyFullStateDiagMatrPower", TEST_CATEGORY_OPS LABEL_MIXED_DEPLOY_TAG ) {
 
     PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
 
@@ -1858,7 +1797,7 @@ TEST_CASE( "applyFullStateDiagMatrPower", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG )
 
         CAPTURE( exponent );
 
-        GENERATE( range(0, TEST_NUM_MIXED_DEPLOYMENT_REPETITIONS) );
+        GENERATE( range(0, getNumTestedMixedDeploymentRepetitions()) );
 
         if (!testRealExp)
             setValidationEpsilon(0);
@@ -1890,7 +1829,372 @@ TEST_CASE( "applyFullStateDiagMatrPower", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG )
 }
 
 
-TEST_CASE( "multiplyPauliStrSum", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
+TEST_CASE( "applyNonUnitaryPauliGadget", TEST_CATEGORY_OPS ) {
+
+    PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        // prepare a random Pauli string and angle
+        int numTargs = GENERATE_COPY( range(1, numQubits+1) );
+        auto targs = GENERATE_TARGS( numQubits, numTargs );
+        PauliStr str = getRandomPauliStr(targs);
+        qcomp angle = getRandomComplex();
+
+        // prepare the corresponding reference matrix exp(-i angle pauli)
+        auto matrRef = getExponentialOfPauliMatrix(angle, getMatrix(str, numQubits));
+
+        auto testFunc = [&](Qureg qureg, auto& stateRef) {
+            applyNonUnitaryPauliGadget(qureg, str, angle);
+            applyReferenceOperator(stateRef, matrRef);
+        };
+
+        CAPTURE( targs, angle );
+        SECTION( LABEL_STATEVEC ) { TEST_ON_CACHED_QUREGS(statevecQuregs, statevecRef, testFunc); }
+        SECTION( LABEL_DENSMATR ) { TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc); }
+    }
+
+    /// @todo input validation
+}
+
+
+/** @} (end defgroup) */
+
+
+
+/** 
+ * OPERATOR TESTS
+ * 
+ * @ingroup unitmult
+ * @{
+ */
+
+
+TEST_CASE( "leftapplySwap",            TEST_CATEGORY_MULT ) { testOperation<zero,two,none,leftapply>(leftapplySwap, FixedMatrices::SWAP); }
+TEST_CASE( "leftapplyPauliX",          TEST_CATEGORY_MULT ) { testOperation<zero,one,none,leftapply>(leftapplyPauliX, FixedMatrices::X); }
+TEST_CASE( "leftapplyPauliY",          TEST_CATEGORY_MULT ) { testOperation<zero,one,none,leftapply>(leftapplyPauliY, FixedMatrices::Y); }
+TEST_CASE( "leftapplyPauliZ",          TEST_CATEGORY_MULT ) { testOperation<zero,one,none,leftapply>(leftapplyPauliZ, FixedMatrices::Z); }
+TEST_CASE( "leftapplyPauliStr",        TEST_CATEGORY_MULT ) { testOperation<zero,any,paulistr,leftapply>(leftapplyPauliStr,    nullptr); }
+TEST_CASE( "leftapplyPauliGadget",     TEST_CATEGORY_MULT ) { testOperation<zero,any,pauligad,leftapply>(leftapplyPauliGadget, nullptr); }
+TEST_CASE( "leftapplyCompMatr1",       TEST_CATEGORY_MULT ) { testOperation<zero,one,compmatr,leftapply>(leftapplyCompMatr1,   nullptr); }
+TEST_CASE( "leftapplyCompMatr2",       TEST_CATEGORY_MULT ) { testOperation<zero,two,compmatr,leftapply>(leftapplyCompMatr2,   nullptr); }
+TEST_CASE( "leftapplyDiagMatr1",       TEST_CATEGORY_MULT ) { testOperation<zero,one,diagmatr,leftapply>(leftapplyDiagMatr1,   nullptr); }
+TEST_CASE( "leftapplyDiagMatr2",       TEST_CATEGORY_MULT ) { testOperation<zero,two,diagmatr,leftapply>(leftapplyDiagMatr2,   nullptr); }
+
+TEST_CASE( "rightapplySwap",            TEST_CATEGORY_MULT ) { testOperation<zero,two,none,rightapply>(rightapplySwap, FixedMatrices::SWAP); }
+TEST_CASE( "rightapplyPauliX",          TEST_CATEGORY_MULT ) { testOperation<zero,one,none,rightapply>(rightapplyPauliX, FixedMatrices::X); }
+TEST_CASE( "rightapplyPauliY",          TEST_CATEGORY_MULT ) { testOperation<zero,one,none,rightapply>(rightapplyPauliY, FixedMatrices::Y); }
+TEST_CASE( "rightapplyPauliZ",          TEST_CATEGORY_MULT ) { testOperation<zero,one,none,rightapply>(rightapplyPauliZ, FixedMatrices::Z); }
+TEST_CASE( "rightapplyPauliStr",        TEST_CATEGORY_MULT ) { testOperation<zero,any,paulistr,rightapply>(rightapplyPauliStr,    nullptr); }
+TEST_CASE( "rightapplyPauliGadget",     TEST_CATEGORY_MULT ) { testOperation<zero,any,pauligad,rightapply>(rightapplyPauliGadget, nullptr); }
+TEST_CASE( "rightapplyCompMatr1",       TEST_CATEGORY_MULT ) { testOperation<zero,one,compmatr,rightapply>(rightapplyCompMatr1,   nullptr); }
+TEST_CASE( "rightapplyCompMatr2",       TEST_CATEGORY_MULT ) { testOperation<zero,two,compmatr,rightapply>(rightapplyCompMatr2,   nullptr); }
+TEST_CASE( "rightapplyDiagMatr1",       TEST_CATEGORY_MULT ) { testOperation<zero,one,diagmatr,rightapply>(rightapplyDiagMatr1,   nullptr); }
+TEST_CASE( "rightapplyDiagMatr2",       TEST_CATEGORY_MULT ) { testOperation<zero,two,diagmatr,rightapply>(rightapplyDiagMatr2,   nullptr); }
+
+
+/*
+ * C++ overloads which accept qubit lists as vectors
+ * and so which require explicit casting to resolve the
+ * compiler ambiguity (spaghetti 4 lyf)
+ */
+
+
+TEST_CASE( "leftapplyCompMatr",  TEST_CATEGORY_MULT ) { 
+    auto func = static_cast<void(*)(Qureg, int*, int, CompMatr)>(leftapplyCompMatr);
+    testOperation<zero,any,compmatr,leftapply>(func, nullptr); 
+}
+
+TEST_CASE( "leftapplyDiagMatr",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int, DiagMatr)>(leftapplyDiagMatr);
+    testOperation<zero,any,diagmatr,leftapply>(func, nullptr);
+}
+
+TEST_CASE( "leftapplyDiagMatrPower",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int, DiagMatr, qcomp)>(leftapplyDiagMatrPower);
+    testOperation<zero,any,diagpower,leftapply>(func, nullptr);
+}
+
+TEST_CASE( "leftapplyMultiQubitNot",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int)>(leftapplyMultiQubitNot);
+    testOperation<zero,any,none,leftapply>(func, VariableSizeMatrices::X);
+}
+
+TEST_CASE( "leftapplyPhaseGadget",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int, qreal)>(leftapplyPhaseGadget);
+    testOperation<zero,any,scalar,leftapply>(func, VariableSizeParameterisedMatrices::Z);
+}
+
+
+TEST_CASE( "rightapplyCompMatr",  TEST_CATEGORY_MULT ) { 
+    auto func = static_cast<void(*)(Qureg, int*, int, CompMatr)>(rightapplyCompMatr);
+    testOperation<zero,any,compmatr,rightapply>(func, nullptr); 
+}
+
+TEST_CASE( "rightapplyDiagMatr",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int, DiagMatr)>(rightapplyDiagMatr);
+    testOperation<zero,any,diagmatr,rightapply>(func, nullptr);
+}
+
+TEST_CASE( "rightapplyDiagMatrPower",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int, DiagMatr, qcomp)>(rightapplyDiagMatrPower);
+    testOperation<zero,any,diagpower,rightapply>(func, nullptr);
+}
+
+TEST_CASE( "rightapplyMultiQubitNot",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int)>(rightapplyMultiQubitNot);
+    testOperation<zero,any,none,rightapply>(func, VariableSizeMatrices::X);
+}
+
+TEST_CASE( "rightapplyPhaseGadget",  TEST_CATEGORY_MULT ) {
+    auto func = static_cast<void(*)(Qureg, int*, int, qreal)>(rightapplyPhaseGadget);
+    testOperation<zero,any,scalar,rightapply>(func, VariableSizeParameterisedMatrices::Z);
+}
+
+
+/*
+ * operations which need custom logic
+ */
+
+
+TEST_CASE( "leftapplyFullStateDiagMatr", TEST_CATEGORY_MULT LABEL_MIXED_DEPLOY_TAG ) {
+
+    PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
+
+    auto cachedMatrs = getCachedFullStateDiagMatrs();
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        qmatrix refMatr = getRandomDiagonalMatrix(getPow2(numQubits));
+        auto apiFunc = leftapplyFullStateDiagMatr;
+
+        GENERATE( range(0, getNumTestedMixedDeploymentRepetitions()) );
+
+        SECTION( LABEL_STATEVEC ) {
+
+            auto refFunc = [&] (qvector& state, qmatrix matr) { leftapplyReferenceOperator(state, matr); };
+
+            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedSV, cachedMatrs, apiFunc, refSV, refMatr, refFunc);
+        }
+
+        SECTION( LABEL_DENSMATR ) {
+
+            auto refFunc = [&] (qmatrix& state, qmatrix matr) { leftapplyReferenceOperator(state, matr); };
+
+            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedDM, cachedMatrs, apiFunc, refDM, refMatr, refFunc);
+        }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "rightapplyFullStateDiagMatr", TEST_CATEGORY_MULT LABEL_MIXED_DEPLOY_TAG ) {
+
+    PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
+
+    auto cachedMatrs = getCachedFullStateDiagMatrs();
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        qmatrix refMatr = getRandomDiagonalMatrix(getPow2(numQubits));
+        auto apiFunc = rightapplyFullStateDiagMatr;
+
+        GENERATE( range(0, getNumTestedMixedDeploymentRepetitions()) );
+
+        SECTION( LABEL_DENSMATR ) {
+
+            auto refFunc = [&] (qmatrix& state, qmatrix matr) { rightapplyReferenceOperator(state, matr); };
+
+            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedDM, cachedMatrs, apiFunc, refDM, refMatr, refFunc);
+        }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "leftapplyFullStateDiagMatrPower", TEST_CATEGORY_MULT LABEL_MIXED_DEPLOY_TAG ) {
+
+    PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
+
+    auto cachedMatrs = getCachedFullStateDiagMatrs();
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        qmatrix refMatr = getRandomDiagonalMatrix(getPow2(numQubits));
+        qcomp exponent = getRandomComplex();
+
+        auto apiFunc = [&](Qureg qureg, FullStateDiagMatr matr) { 
+            return leftapplyFullStateDiagMatrPower(qureg, matr, exponent);
+        };
+
+        CAPTURE( exponent );
+        
+        GENERATE( range(0, getNumTestedMixedDeploymentRepetitions()) );
+
+        SECTION( LABEL_STATEVEC ) {
+
+            auto refFunc = [&] (qvector& state, qmatrix matr) { 
+                matr = getPowerOfDiagonalMatrix(matr, exponent);
+                leftapplyReferenceOperator(state, matr);
+            };
+
+            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedSV, cachedMatrs, apiFunc, refSV, refMatr, refFunc);
+        }
+
+        SECTION( LABEL_DENSMATR ) {
+
+            auto refFunc = [&] (qmatrix& state, qmatrix matr) { 
+                matr = getPowerOfDiagonalMatrix(matr, exponent);
+                leftapplyReferenceOperator(state, matr);
+            };
+
+            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedDM, cachedMatrs, apiFunc, refDM, refMatr, refFunc);
+        }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "rightapplyFullStateDiagMatrPower", TEST_CATEGORY_MULT LABEL_MIXED_DEPLOY_TAG ) {
+
+    PREPARE_TEST( numQubits, cachedSV, cachedDM, refSV, refDM );
+
+    auto cachedMatrs = getCachedFullStateDiagMatrs();
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        qmatrix refMatr = getRandomDiagonalMatrix(getPow2(numQubits));
+        qcomp exponent = getRandomComplex();
+
+        auto apiFunc = [&](Qureg qureg, FullStateDiagMatr matr) { 
+            return rightapplyFullStateDiagMatrPower(qureg, matr, exponent);
+        };
+
+        CAPTURE( exponent );
+        
+        GENERATE( range(0, getNumTestedMixedDeploymentRepetitions()) );
+
+        SECTION( LABEL_DENSMATR ) {
+
+            auto refFunc = [&] (qmatrix& state, qmatrix matr) { 
+                matr = getPowerOfDiagonalMatrix(matr, exponent);
+                rightapplyReferenceOperator(state, matr);
+            };
+
+            TEST_ON_CACHED_QUREG_AND_MATRIX( cachedDM, cachedMatrs, apiFunc, refDM, refMatr, refFunc);
+        }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "leftapplyQubitProjector", TEST_CATEGORY_OPS ) {
+
+    PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        GENERATE( range(0,10) );
+        int target = GENERATE_COPY( range(0,numQubits) );
+        int outcome = GENERATE( 0, 1 );
+
+        qmatrix projector = getProjector(outcome);
+
+        auto testFunc = [&](Qureg qureg, auto& ref) {
+            leftapplyQubitProjector(qureg, target, outcome);
+            leftapplyReferenceOperator(ref, {target}, projector);
+        };
+
+        CAPTURE( target, outcome );
+        SECTION( LABEL_STATEVEC ) { TEST_ON_CACHED_QUREGS(statevecQuregs, statevecRef, testFunc); }
+        SECTION( LABEL_DENSMATR ) { TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc); }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "rightapplyQubitProjector", TEST_CATEGORY_OPS ) {
+
+    PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        GENERATE( range(0,10) );
+        int target = GENERATE_COPY( range(0,numQubits) );
+        int outcome = GENERATE( 0, 1 );
+
+        qmatrix projector = getProjector(outcome);
+
+        auto testFunc = [&](Qureg qureg, auto& ref) {
+            rightapplyQubitProjector(qureg, target, outcome);
+            rightapplyReferenceOperator(ref, {target}, projector);
+        };
+
+        CAPTURE( target, outcome );
+        SECTION( LABEL_DENSMATR ) { TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc); }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "leftapplyMultiQubitProjector", TEST_CATEGORY_OPS ) {
+
+    PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        int numTargs = GENERATE_COPY( range(1,numQubits+1) );
+        auto targets = GENERATE_TARGS( numQubits, numTargs );
+        auto outcomes = getRandomOutcomes(numTargs);
+
+        qmatrix projector = getProjector(targets, outcomes, numQubits);
+
+        auto testFunc = [&](Qureg qureg, auto& ref) {
+            leftapplyMultiQubitProjector(qureg, targets.data(), outcomes.data(), numTargs);
+            leftapplyReferenceOperator(ref, projector);
+        };
+
+        CAPTURE( targets, outcomes );
+        SECTION( LABEL_STATEVEC ) { TEST_ON_CACHED_QUREGS(statevecQuregs, statevecRef, testFunc); }
+        SECTION( LABEL_DENSMATR ) { TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc); }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "rightapplyMultiQubitProjector", TEST_CATEGORY_OPS ) {
+
+    PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        int numTargs = GENERATE_COPY( range(1,numQubits+1) );
+        auto targets = GENERATE_TARGS( numQubits, numTargs );
+        auto outcomes = getRandomOutcomes(numTargs);
+
+        qmatrix projector = getProjector(targets, outcomes, numQubits);
+
+        auto testFunc = [&](Qureg qureg, auto& ref) {
+            rightapplyMultiQubitProjector(qureg, targets.data(), outcomes.data(), numTargs);
+            rightapplyReferenceOperator(ref, projector);
+        };
+
+        CAPTURE( targets, outcomes );
+        SECTION( LABEL_DENSMATR ) { TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc); }
+    }
+
+    /// @todo input validation
+}
+
+
+TEST_CASE( "leftapplyPauliStrSum", TEST_CATEGORY_MULT LABEL_MIXED_DEPLOY_TAG ) {
 
     PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
 
@@ -1905,7 +2209,7 @@ TEST_CASE( "multiplyPauliStrSum", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
 
             // must use (and ergo make) an identically-deployed workspace
             Qureg workspace = createCloneQureg(qureg);
-            multiplyPauliStrSum(qureg, sum, workspace);
+            leftapplyPauliStrSum(qureg, sum, workspace);
             destroyQureg(workspace);
 
             ref = getMatrix(sum, numQubits) * ref;
@@ -1920,13 +2224,33 @@ TEST_CASE( "multiplyPauliStrSum", TEST_CATEGORY LABEL_MIXED_DEPLOY_TAG ) {
 }
 
 
+TEST_CASE( "rightapplyPauliStrSum", TEST_CATEGORY_MULT LABEL_MIXED_DEPLOY_TAG ) {
+
+    PREPARE_TEST( numQubits, statevecQuregs, densmatrQuregs, statevecRef, densmatrRef );
+
+    SECTION( LABEL_CORRECTNESS ) {
+
+        int numQubits = getNumCachedQubits();
+        int numTerms = GENERATE_COPY( 1, 2, 10 );
+
+        PauliStrSum sum = createRandomPauliStrSum(numQubits, numTerms);
+
+        auto testFunc = [&](Qureg qureg, auto& ref) {
+
+            // must use (and ergo make) an identically-deployed workspace
+            Qureg workspace = createCloneQureg(qureg);
+            rightapplyPauliStrSum(qureg, sum, workspace);
+            destroyQureg(workspace);
+
+            ref = ref * getMatrix(sum, numQubits);
+        };
+
+        CAPTURE( numTerms );
+        SECTION( LABEL_DENSMATR ) { TEST_ON_CACHED_QUREGS(densmatrQuregs, densmatrRef, testFunc); }
+    }
+
+    /// @todo input validation
+}
+
+
 /** @} (end defgroup) */
-
-
-
-/**
- * @todo
- * UNTESTED FUNCTIONS
- */
-
-void applyTrotterizedPauliStrSumGadget(Qureg qureg, PauliStrSum sum, qreal angle, int order, int reps);

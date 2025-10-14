@@ -5,6 +5,7 @@
  * deployment is consistent with the compiled deployment modes.
  * 
  * @author Tyson Jones
+ * @author Luc Jaulmes (NUMA & pagesize errors)
  */
 
 #include "quest/include/types.h"
@@ -104,6 +105,41 @@ void error_memSizeQueriedButWouldOverflow() {
     raiseInternalError("Attempted to obtain memory necessary to allocate a distributed object's single-node partition but it overflowed size_t despite prior validation.");
 }
 
+void error_gettingPageSizeFailed() {
+
+    raiseInternalError("Failed to get the page size.");
+}
+
+void error_pageSizeNotAPowerOf2() {
+
+    raiseInternalError("The discovered page size was not a power of 2. Get Dr Denning on the phone.");
+}
+
+void error_pageSizeNotAMultipleOfQcomp() {
+
+    raiseInternalError("The page size was indivisible by the number of bytes in a qcomp.");
+}
+
+void error_gettingNumNumaNodesFailed() {
+
+    raiseInternalError("Failed to get the NUMA node count");
+}
+
+void error_numaAllocOrDeallocAttemptedOnWindows() {
+
+    raiseInternalError("NUMA-aware memory allocation or deallocation was attempted on Windows though this is not yet implemented, indicating a potential build issue.");
+}
+
+void error_numaBindingFailed() {
+
+    raiseInternalError("The binding of memory pages to NUMA nodes (with mbind) unexpectedly failed, despite prior reservation (with mmap) succeeding.");
+}
+
+void error_numaUnmappingFailed() {
+
+    raiseInternalError("NUMA-aware memory deallocation unexpectedly failed.");
+}
+
 
 
 /*
@@ -123,11 +159,6 @@ void error_commAlreadyInit() {
 void error_commButEnvNotDistributed() {
 
     raiseInternalError("A function attempted to invoke communication despite QuEST being compiled in non-distributed mode.");
-}
-
-void error_commButQuregNotDistributed() {
-
-    raiseInternalError("A function attempted to invoke communication of a Qureg which was not distributed.");
 }
 
 void error_commOutOfBounds() {
@@ -173,7 +204,7 @@ void assert_commPayloadIsPowerOf2(qindex numAmps) {
 void assert_commQuregIsDistributed(Qureg qureg) {
 
     if (!qureg.isDistributed)
-        error_commButQuregNotDistributed();
+        raiseInternalError("A function attempted to invoke communication of a Qureg which was not distributed.");
 }
 
 void assert_commFullStateDiagMatrIsDistributed(FullStateDiagMatr matr) {
@@ -431,6 +462,18 @@ void assert_fullStateDiagMatrIsDistributed(FullStateDiagMatr matr) {
         raiseInternalError("An accelerator function received a non-distributed FullStateDiagMatr where a distributed one was expected.");
 }
 
+void assert_fullStateDiagMatrTemplateParamsAreValid(bool applyLeft, bool applyRight, bool conjRight) {
+
+    bool valid = (
+        (  applyLeft &&   applyRight &&   conjRight) || // matr qureg conj(matr)
+        (  applyLeft && ! applyRight && ! conjRight) || // matr qureg
+        (! applyLeft &&   applyRight && ! conjRight)    //      qureg matr
+    );
+
+    if (!valid)
+        raiseInternalError("The accelerator function accel_densmatr_allTargDiagMatr_subA() recieved an invalid combination of template parameters.");
+}
+
 void assert_acceleratorQuregIsDistributed(Qureg qureg) {
 
     if (!qureg.isDistributed)
@@ -515,17 +558,6 @@ void assert_quregDistribAndFullStateDiagMatrLocal(Qureg qureg, FullStateDiagMatr
         raiseInternalError("The FullStateDiagMatr was unexpectedly distributed.");
 }
 
-void assert_superposedQuregDimsAndDeploysMatch(Qureg facOut, Qureg in1, Qureg in2) {
-
-    if (
-        facOut.isDistributed    != in1.isDistributed    || in1.isDistributed    != in2.isDistributed    ||
-        facOut.isDensityMatrix  != in1.isDensityMatrix  || in1.isDensityMatrix  != in2.isDensityMatrix  ||
-        facOut.isGpuAccelerated != in1.isGpuAccelerated || in1.isGpuAccelerated != in2.isGpuAccelerated ||
-        facOut.numQubits        != in1.numQubits        || in1.numQubits        != in2.numQubits
-    )
-        raiseInternalError("An internal function *_setQuregToSuperposition() received Quregs of mismatching dimensions and/or deployments.");
-}
-
 
 
 /*
@@ -603,6 +635,11 @@ void error_gpuDeadCopyMatrixFunctionCalled() {
     raiseInternalError("The internal GPU function copyMatrixIfGpuCompiled() was called, though is intended as dead-code - matrices needing copying to GPU should be stored as flat row-wise lists.");
 }
 
+void error_gpuDenseMatrixConjugatedAndTransposed() {
+
+    raiseInternalError("The GPU + cuQuantum implementation of anyCtrlAnyTargDenseMatr() assumes that at most one of template arguments ApplyConj and ApplyTransp is true, though this was violated.");
+}
+
 void assert_quregIsGpuAccelerated(Qureg qureg) {
 
     if (!qureg.isGpuAccelerated)
@@ -645,6 +682,11 @@ void error_cudaCallFailed(const char* msg, const char* func, const char* caller,
     raiseInternalError(err);
 }
 
+void error_cudaEncounteredIrrecoverableError() {
+
+    raiseInternalError("The CUDA API encountered an irrecoverable \"sticky\" error which was attemptedly cleared as if it were non-sticky.");
+}
+
 
 
 /*
@@ -682,6 +724,31 @@ void error_cuQuantumTempCpuAllocFailed() {
 void error_pauliStrShiftedByIllegalAmount() {
 
     raiseInternalError("A PauliStr was attemptedly shifted (likely invoked by its application upon a density matrix) by an illegal amount (e.g. negative, or that exceeding the PauliStr bitmask length).");
+}
+
+void error_pauliStrSumHasMoreQubitsThanSpecifiedInTensorProd() {
+
+    raiseInternalError("Attempted to calculate the tensor product of a PauliStrSum with itself, but it contained non-identity Paulis on qubits beyond the number specified.");
+}
+
+void error_pauliStrSumHasMoreQubitsThanSpecifiedInConjShift() {
+
+    raiseInternalError("Attempted to calculate the tensor product of a (conjugated) PauliStrSum with identity, but it contained non-identity Paulis on qubits beyond the number specified in the identity.");
+}
+
+void error_pauliStrSumTensorProdHasIncorrectNumTerms() {
+
+    raiseInternalError("The tensor product of a (conjugated) PauliStrSum with itself was attemptedly written to output PauliStrSum with an incompatible number of terms.");
+}
+
+void error_pauliStrSumProdHasIncorrectNumTerms() {
+
+    raiseInternalError("The product of a (conjugate transposed) PauliStrSum with itself was attemptedly written to an output PauliStrSum with an incompatible number of terms.");
+}
+
+void error_pauliStrSumConjHasIncorrectNumTerms() {
+
+    raiseInternalError("Attempted to calculate the conjugate of a PauliStrSum but the output PauliStrSum had a differing (and ergo invalid) number of terms.");
 }
 
 
@@ -817,4 +884,31 @@ void assert_printerGivenPositiveNumNewlines() {
 
     if (printer_getNumTrailingNewlines() < min)
         raiseInternalError("A printer utility attempted to print one fewer than the user-set number of trailing newlines; but that number was zero! This violates prior validation.");
+}
+
+
+
+/*
+ * ENVIRONMENT VARIABLE ERRORS
+ */
+
+void error_envVarsNotYetLoaded() {
+
+    raiseInternalError("An environment variable was queried but all environment variables have not yet been loaded.");
+}
+
+void error_envVarsAlreadyLoaded() {
+
+    raiseInternalError("All environment variables were already loaded and validated yet re-loading was attempted.");
+}
+
+
+
+/*
+ * TROTTERISATION ERRORS
+ */
+
+void error_unexpectedNumLindbladSuperpropTerms() {
+
+    raiseInternalError("A different number of Lindblad superpropagator terms were prepared than expected.");
 }

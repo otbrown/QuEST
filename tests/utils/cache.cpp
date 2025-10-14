@@ -12,6 +12,7 @@
 #include "qmatrix.hpp"
 #include "macros.hpp"
 #include "linalg.hpp"
+#include "config.hpp"
 #include "cache.hpp"
 
 #include <unordered_map>
@@ -36,19 +37,15 @@ quregCache densmatrs1;
 quregCache densmatrs2;
 matrixCache matrices;
 
-
-
-/*
- * while the number of qubits in the unit-test Quregs/matr
- * is fixed, it is defined privately here (with internal
- * linkage) so that it can be changed between compilations
- * without having to recompiling the entire test suite
- */
-
-static constexpr int NUM_QUBITS_IN_CACHE = 6;
-
 int getNumCachedQubits() {
-    return NUM_QUBITS_IN_CACHE;
+
+    // we are merely aliasing the below env-var fetching function
+    // to minimise a diff since pre-runtime controlling the tested
+    // Qureg sizes is experimental and not fully designed (we may
+    // eventually wish to specify different sizes for statevectors
+    // vs density matrices, or control integration test Qureg sizes
+    // also through environment variables, etc)
+    return getNumQubitsInUnitTestedQuregs();
 }
 
 
@@ -68,7 +65,7 @@ deployInfo getSupportedDeployments() {
     bool gpu = env.isGpuAccelerated;
 
     // return only the "most-accelerated" deployment, unless all are desired
-    bool one = ! TEST_ALL_DEPLOYMENTS;
+    bool one = ! getWhetherToTestAllDeployments();
 
     // add only those supported to the output list, in order of preference.
     // flag order is (MPI, GPU, OMP), matching createCustomQureg
@@ -100,7 +97,7 @@ quregCache createCachedStatevecsOrDensmatrs(bool isDensMatr) {
 
     // only add supported-deployment quregs to the cache
     for (auto [label, mpi, gpu, omp] : getSupportedDeployments())
-        out[label] = createCustomQureg(NUM_QUBITS_IN_CACHE, isDensMatr, mpi, gpu, omp);
+        out[label] = createCustomQureg(getNumCachedQubits(), isDensMatr, mpi, gpu, omp);
 
     return out;
 }
@@ -184,7 +181,7 @@ void createCachedFullStateDiagMatrs() {
 
     // only add supported-deployment matrices to the cache
     for (auto [label, mpi, gpu, omp] : getSupportedDeployments())
-        matrices[label] = createCustomFullStateDiagMatr(NUM_QUBITS_IN_CACHE, mpi, gpu, omp);
+        matrices[label] = createCustomFullStateDiagMatr(getNumCachedQubits(), mpi, gpu, omp);
 }
 
 void destroyCachedFullStateDiagMatrs() {
@@ -213,8 +210,8 @@ matrixCache getCachedFullStateDiagMatrs() {
  */
 
 qvector getRefStatevec() {
-    return getZeroVector(getPow2(NUM_QUBITS_IN_CACHE));
+    return getZeroVector(getPow2(getNumCachedQubits()));
 }
 qmatrix getRefDensmatr() {
-    return getZeroMatrix(getPow2(NUM_QUBITS_IN_CACHE));
+    return getZeroMatrix(getPow2(getNumCachedQubits()));
 }

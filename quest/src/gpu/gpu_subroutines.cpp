@@ -32,11 +32,13 @@
  * @author Tyson Jones
  */
 
+// obtain preprocessors from config.h prior to validation
+#include "quest/include/config.h"
+
 #if (COMPILE_CUQUANTUM && ! COMPILE_CUDA)
     #error "Cannot define COMPILE_CUQUANTUM=1 without simultaneously defining COMPILE_CUDA=1"
 #endif
 
-#include "quest/include/modes.h"
 #include "quest/include/types.h"
 #include "quest/include/qureg.h"
 #include "quest/include/paulis.h"
@@ -290,8 +292,9 @@ void gpu_statevec_anyCtrlOneTargDenseMatr_subA(Qureg qureg, vector<int> ctrls, v
 
 #if COMPILE_CUQUANTUM
 
+    bool applyAdj = false;
     auto arr = unpackMatrixToCuQcomps(matr);
-    cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(qureg, ctrls, ctrlStates, {targ}, arr.data());
+    cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(qureg, ctrls, ctrlStates, {targ}, arr.data(), applyAdj);
 
 #elif COMPILE_CUDA
 
@@ -358,8 +361,9 @@ void gpu_statevec_anyCtrlTwoTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, ve
 
 #if COMPILE_CUQUANTUM
 
+    bool applyAdj = false;
     auto arr = unpackMatrixToCuQcomps(matr);
-    cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(qureg, ctrls, ctrlStates, {targ1, targ2}, arr.data());
+    cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(qureg, ctrls, ctrlStates, {targ1, targ2}, arr.data(), applyAdj);
 
 #elif COMPILE_CUDA
 
@@ -393,7 +397,7 @@ INSTANTIATE_FUNC_OPTIMISED_FOR_NUM_CTRLS( void, gpu_statevec_anyCtrlTwoTargDense
  */
 
 
-template <int NumCtrls, int NumTargs, bool ApplyConj>
+template <int NumCtrls, int NumTargs, bool ApplyConj, bool ApplyTransp>
 void gpu_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, vector<int> ctrlStates, vector<int> targs, CompMatr matr) {
 
     assert_numCtrlsMatchesNumCtrlStatesAndTemplateParam(ctrls.size(), ctrlStates.size(), NumCtrls);
@@ -404,14 +408,21 @@ void gpu_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, ve
     auto matrElemsPtr = toCuQcomps(matr.gpuElemsFlat);
     auto matrElemsLen = matr.numRows * matr.numRows;
 
-    // conjugate every matrix element if necessary (cuStateVec cannot conj for us; only adjoint)
-    if (ApplyConj)
+    // assert the pre-condition assumed below
+    if (ApplyConj && ApplyTransp)
+        error_gpuDenseMatrixConjugatedAndTransposed();
+
+    // cuStateVec can effect the adjoint, but not the individual conjugate or transpose,
+    // and alas we only ever use one at a time (because applying matrix to the bra-qubits of
+    // a vectorised density matrix effectively transposes the matrix), so we effect transpose
+    // by manually conjugating then telling cuQuantum to adjoint (hehe!)
+    if (ApplyConj || ApplyTransp)
         thrust_setElemsToConjugate(matrElemsPtr, matrElemsLen);
 
-    cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(qureg, ctrls, ctrlStates, targs, matrElemsPtr);
+    cuquantum_statevec_anyCtrlAnyTargDenseMatrix_subA(qureg, ctrls, ctrlStates, targs, matrElemsPtr, ApplyTransp);
 
-    // undo conjugation (which is only not done if cuQuantum encounters a non-recoverable internal error)
-    if (ApplyConj)
+    // undo changes (which is only not done if cuQuantum encounters a non-recoverable internal error)
+    if (ApplyConj || ApplyTransp)
         thrust_setElemsToConjugate(matrElemsPtr, matrElemsLen);
 
 #elif COMPILE_CUDA
@@ -454,10 +465,12 @@ void gpu_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, ve
         qindex numThreads = numBatches;
         qindex numBlocks = getNumBlocks(numThreads);
 
-        kernel_statevec_anyCtrlFewTargDenseMatr<NumCtrls, NumTargs, ApplyConj> <<<numBlocks, NUM_THREADS_PER_BLOCK>>> (
-            ampsPtr, numThreads, 
-            qubitsPtr, nCtrls, qubitStateMask, 
-            targsPtr, matrPtr
+        kernel_statevec_anyCtrlFewTargDenseMatr
+            <NumCtrls, NumTargs, ApplyConj, ApplyTransp> 
+            <<<numBlocks, NUM_THREADS_PER_BLOCK>>> (
+                ampsPtr, numThreads, 
+                qubitsPtr, nCtrls, qubitStateMask, 
+                targsPtr, matrPtr
         );
 
     } else {
@@ -490,11 +503,13 @@ void gpu_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, ve
         qindex numKernelInvocations = numBlocks * NUM_THREADS_PER_BLOCK;
         qcomp* cache = gpu_getCacheOfSize(powerOf2(targs.size()), numKernelInvocations);
 
-        kernel_statevec_anyCtrlManyTargDenseMatr <NumCtrls, ApplyConj> <<<numBlocks, NUM_THREADS_PER_BLOCK>>> (
-            toCuQcomps(cache),
-            ampsPtr, numThreads, numBatchesPerThread, 
-            qubitsPtr, nCtrls, qubitStateMask, 
-            targsPtr, targs.size(), powerOf2(targs.size()), matrPtr
+        kernel_statevec_anyCtrlManyTargDenseMatr 
+            <NumCtrls, ApplyConj, ApplyTransp> 
+            <<<numBlocks, NUM_THREADS_PER_BLOCK>>> (
+                toCuQcomps(cache),
+                ampsPtr, numThreads, numBatchesPerThread, 
+                qubitsPtr, nCtrls, qubitStateMask, 
+                targsPtr, targs.size(), powerOf2(targs.size()), matrPtr
         );
     }
 
@@ -504,7 +519,7 @@ void gpu_statevec_anyCtrlAnyTargDenseMatr_sub(Qureg qureg, vector<int> ctrls, ve
 }
 
 
-INSTANTIATE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( void, gpu_statevec_anyCtrlAnyTargDenseMatr_sub, (Qureg, vector<int>, vector<int>, vector<int>, CompMatr) )
+INSTANTIATE_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( void, gpu_statevec_anyCtrlAnyTargDenseMatr_sub, (Qureg, vector<int>, vector<int>, vector<int>, CompMatr) )
 
 
 
@@ -709,7 +724,7 @@ void gpu_statevec_anyCtrlAnyTargDiagMatr_sub(Qureg qureg, vector<int> ctrls, vec
 }
 
 
-INSTANTIATE_EXPONENTIABLE_CONJUGABLE_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( void, gpu_statevec_anyCtrlAnyTargDiagMatr_sub, (Qureg, vector<int>, vector<int>, vector<int>, DiagMatr, qcomp) )
+INSTANTIATE_TWO_BOOL_FUNC_OPTIMISED_FOR_NUM_CTRLS_AND_TARGS( void, gpu_statevec_anyCtrlAnyTargDiagMatr_sub, (Qureg, vector<int>, vector<int>, vector<int>, DiagMatr, qcomp) )
 
 
 
@@ -736,23 +751,21 @@ void gpu_statevec_allTargDiagMatr_sub(Qureg qureg, FullStateDiagMatr matr, qcomp
 }
 
 
-template <bool HasPower, bool MultiplyOnly>
+template <bool HasPower, bool ApplyLeft, bool ApplyRight, bool ConjRight>
 void gpu_densmatr_allTargDiagMatr_sub(Qureg qureg, FullStateDiagMatr matr, qcomp exponent) {
 
     assert_exponentMatchesTemplateParam(exponent, HasPower);
-
-    // in theory, we could use cuQuantum when HasPower=MultiplyOnly=true,
-    // treating FullStateDiagMatr like an N/2-qubit DiagMatr upon a SV,
-    // but this scenario is not worth the code complication
 
 #if COMPILE_CUDA || COMPILE_CUQUANTUM
 
     qindex numThreads = qureg.numAmpsPerNode;
     qindex numBlocks = getNumBlocks(numThreads);
 
-    kernel_densmatr_allTargDiagMatr_sub <HasPower, MultiplyOnly> <<<numBlocks, NUM_THREADS_PER_BLOCK>>> (
-        toCuQcomps(qureg.gpuAmps), numThreads, qureg.rank, qureg.logNumAmpsPerNode,
-        toCuQcomps(util_getGpuMemPtr(matr)), matr.numElems, toCuQcomp(exponent)
+    kernel_densmatr_allTargDiagMatr_sub 
+        <HasPower, ApplyLeft, ApplyRight, ConjRight> 
+        <<<numBlocks, NUM_THREADS_PER_BLOCK>>> (
+            toCuQcomps(qureg.gpuAmps), numThreads, qureg.rank, qureg.logNumAmpsPerNode,
+            toCuQcomps(util_getGpuMemPtr(matr)), matr.numElems, toCuQcomp(exponent)
     );
 
 #else
@@ -764,10 +777,12 @@ void gpu_densmatr_allTargDiagMatr_sub(Qureg qureg, FullStateDiagMatr matr, qcomp
 template void gpu_statevec_allTargDiagMatr_sub<true >(Qureg, FullStateDiagMatr, qcomp);
 template void gpu_statevec_allTargDiagMatr_sub<false>(Qureg, FullStateDiagMatr, qcomp);
 
-template void gpu_densmatr_allTargDiagMatr_sub<true, true>  (Qureg, FullStateDiagMatr, qcomp);
-template void gpu_densmatr_allTargDiagMatr_sub<true, false> (Qureg, FullStateDiagMatr, qcomp);
-template void gpu_densmatr_allTargDiagMatr_sub<false, true> (Qureg, FullStateDiagMatr, qcomp);
-template void gpu_densmatr_allTargDiagMatr_sub<false, false>(Qureg, FullStateDiagMatr, qcomp);
+template void gpu_densmatr_allTargDiagMatr_sub<false, true,  true,  true>  (Qureg, FullStateDiagMatr, qcomp); // matr qureg conj(matr)
+template void gpu_densmatr_allTargDiagMatr_sub<false, true,  false, false> (Qureg, FullStateDiagMatr, qcomp); // matr qureg
+template void gpu_densmatr_allTargDiagMatr_sub<false, false, true,  false> (Qureg, FullStateDiagMatr, qcomp); //      qureg matr
+template void gpu_densmatr_allTargDiagMatr_sub<true,  true,  true,  true>  (Qureg, FullStateDiagMatr, qcomp); // matr^P qureg conj(matr^P)
+template void gpu_densmatr_allTargDiagMatr_sub<true,  true,  false, false> (Qureg, FullStateDiagMatr, qcomp); // matr^P qureg
+template void gpu_densmatr_allTargDiagMatr_sub<true,  false, true,  false> (Qureg, FullStateDiagMatr, qcomp); //      qureg matr^P
 
 
 
@@ -896,11 +911,28 @@ INSTANTIATE_FUNC_OPTIMISED_FOR_NUM_CTRLS( void, gpu_statevector_anyCtrlAnyTargZO
  */
 
 
-void gpu_statevec_setQuregToSuperposition_sub(qcomp facOut, Qureg outQureg, qcomp fac1, Qureg inQureg1, qcomp fac2, Qureg inQureg2) {
+template <int NumQuregs> 
+void gpu_statevec_setQuregToWeightedSum_sub(Qureg outQureg, vector<qcomp> coeffs, vector<Qureg> inQuregs) {
 
 #if COMPILE_CUDA || COMPILE_CUQUANTUM
 
-    thrust_statevec_setQuregToSuperposition_sub(toCuQcomp(facOut), outQureg, toCuQcomp(fac1), inQureg1, toCuQcomp(fac2), inQureg2);
+    qindex numThreads = outQureg.numAmpsPerNode;
+    qindex numBlocks = getNumBlocks(numThreads);
+
+    // extract amp ptrs from qureg list
+    vector<cu_qcomp*> ptrs;
+    ptrs.reserve(inQuregs.size());
+    for (auto& qureg : inQuregs)
+        ptrs.push_back(toCuQcomps(qureg.gpuAmps));
+    
+    // copy coeff and qureg lists into GPU memory
+    devcuqcompptrs devQuregAmps = ptrs;
+    devcomps devCoeffs = coeffs;
+
+    kernel_statevec_setQuregToWeightedSum_sub <NumQuregs> <<<numBlocks, NUM_THREADS_PER_BLOCK>>> (
+        toCuQcomps(outQureg.gpuAmps), numThreads,
+        getPtr(devCoeffs), getPtr(devQuregAmps), inQuregs.size()
+    );
 
 #else
     error_gpuSimButGpuNotCompiled();
@@ -954,6 +986,9 @@ void gpu_densmatr_mixQureg_subC(qreal outProb, Qureg outQureg, qreal inProb) {
     error_gpuSimButGpuNotCompiled();
 #endif
 }
+
+
+INSTANTIATE_FUNC_OPTIMISED_FOR_NUM_QUREGS( void, gpu_statevec_setQuregToWeightedSum_sub, (Qureg, vector<qcomp>, vector<Qureg>) )
 
 
 

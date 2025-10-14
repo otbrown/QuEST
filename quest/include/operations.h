@@ -1,14 +1,19 @@
 /** @file
- * API signatures for effecting operators (such as gates and unitaries) 
- * upon Quregs which are instantiated as either statevectors or 
- * density matrices. This excludes decoherence channels which are
- * instead exposed in decoherence.h
+ * API signatures for effecting mostly physical and/or trace
+ * preserving operators, such as unitaries, gates and 
+ * measurements, upon Quregs which are instantiated as both 
+ * statevectors or density matrices. This excludes Trotterised
+ * gadgets and evolutions (exposed instead in trotterisation.h),
+ * functions to pre- or post-multiply operators upon density
+ * matrices (multiplication.h) and decoherence channels
+ * (decoherence.h).
  * 
  * @author Tyson Jones
+ * @author Diogo Pratas Maia (non-unitary Pauli gadget)
  * 
  * @defgroup operations Operations
  * @ingroup api
- * @brief Functions for effecting operators upon Quregs.
+ * @brief Functions for effecting standard operators upon Quregs.
  * @{
  */
 
@@ -45,56 +50,6 @@ extern "C" {
 #endif
 
 
-/** Multiplies a general one-qubit dense @p matrix upon the specified @p target 
- * qubit of @p qureg.
- *  
- * @formulae
- * Let @f$ \hat{M} = @f$ @p matrix and @f$ t = @f$ @p target, and notate 
- * @f$\hat{M}_t@f$ as per applyCompMatr1(). Unlike applyCompMatr1() however,
- * this function only ever left-multiplies @p matrix upon @p qureg, regardless
- * of whether it is a statevector or density matrix.
- * 
- * Explicitly,
- * - When @p qureg is a statevector @f$ \svpsi @f$, this function effects
- *   @f[ 
-        \svpsi \rightarrow \hat{M}_t \, \svpsi.
- *   @f]
- * - When @p qureg is a density matrix @f$\dmrho@f$, this function effects
- *   @f[ 
-        \dmrho \rightarrow \hat{M}_t \, \dmrho.
- *   @f]
- *
- * There are no additional constraints like unitarity.
- *
- * @myexample
- * ```
-    Qureg qureg = createDensityQureg(5);
-
-    CompMatr1 matrix = getInlineCompMatr1({
-        {0.1, 0.2},
-        {0.3i, 0.4i}
-    });
-
-    multiplyCompMatr1(qureg, 2, matrix); 
- * ```
- *
- * @param[in,out] qureg  the state to modify.
- * @param[in]     target the index of the target qubit.
- * @param[in]     matrix the Z-basis matrix to multiply.
- * @throws @validationerror
- * - if @p qureg or @p matrix are uninitialised.
- * - if @p target is an invalid qubit index.
- * @see
- * - getCompMatr1()
- * - getInlineCompMatr1()
- * - applyCompMatr1()
- * - applyQubitProjector()
- * - multiplyCompMatr()
- * @author Tyson Jones
- */
-void multiplyCompMatr1(Qureg qureg, int target, CompMatr1 matrix);
-
-
 /** Applies a general one-qubit dense unitary @p matrix to the specified @p target 
  * qubit of @p qureg.
  * 
@@ -114,6 +69,7 @@ digraph {
  * @enddot
  * 
  * @formulae
+ * 
  * Let @f$ \hat{U} = @f$ @p matrix, @f$ t = @f$ @p target, and let @f$\hat{U}_t@f$
  * notate operating @f$\hat{U}@f$ upon the @f$ t @f$-th qubit among@f$ N @f$, i.e.
  * @f[ 
@@ -130,9 +86,10 @@ digraph {
  *   @f]
  *
  * @constraints
+ * 
  * - Unitarity of @f$ \hat{U} = @f$ @p matrix requires that 
  *   @f$ \hat{U} \hat{U}^\dagger = \id @f$. Validation will check that @p matrix is
- *   approximately unitarity via
+ *   approximately unitary via
  *   @f[ 
         \max\limits_{ij} \Big|\left(\hat{U} \hat{U}^\dagger - \id\right)_{ij}\Big|^2 \le \valeps
  *   @f]
@@ -160,7 +117,8 @@ digraph {
  * @see
  * - getCompMatr1()
  * - getInlineCompMatr1()
- * - multiplyCompMatr1()
+ * - leftapplyCompMatr1()
+ * - rightapplyCompMatr1()
  * - applyControlledCompMatr1()
  * - applyCompMatr2()
  * - applyCompMatr()
@@ -169,9 +127,7 @@ digraph {
 void applyCompMatr1(Qureg qureg, int target, CompMatr1 matrix);
 
 
-/** @notyetdoced
- * 
- * Applies a singly-controlled one-qubit dense unitary @p matrix to the specified 
+/** Applies a singly-controlled one-qubit dense unitary @p matrix to the specified 
  * @p target qubit of @p qureg.
  * 
  * @diagram
@@ -200,8 +156,84 @@ digraph {
 }
  * @enddot
  *
+ * @formulae
+ * 
+ * Let @f$ \hat{U} = @f$ @p matrix, @f$ t = @f$ @p target, @f$ c = @f$ @p control,
+ * and let @f$\hat{O}_q@f$ denote an operator upon the @f$q@f$-th qubit.
+ * This function effects operator
+ * @f[
+    C_c[\hat{U}_t] = \ketbra{0}{0}_c \otimes \id_t + \ketbra{1}{1}_c \otimes \hat{U}_t,
+ * @f]
+ * where @f$\hat{U}@f$ is effected upon basis states for which qubit @f$c@f$ has value `1`.
+ * For illustration, when @p control=0 and @p target=1, this function would effect
+ * @f[
+    C_1[\hat{U}_0] \equiv 
+    \begin{pmatrix} 
+      1 \\ & 1 \\ & & u_{00} & u_{01} \\ & & u_{10} & u_{11}
+    \end{pmatrix}.
+ * @f]
+ *
+ * This operation can be performed upon statevectors and density matrices.
+ *
+ * - When @p qureg is a statevector @f$ \svpsi @f$, this function effects
+ *   @f[ 
+        \svpsi \rightarrow C_c[\hat{U}_t] \, \svpsi.
+ *   @f]
+ * - When @p qureg is a density matrix @f$\dmrho@f$, this function effects
+ *   @f[ 
+        \dmrho \rightarrow C_c[\hat{U}_t] \, \dmrho \, {C_c[\hat{U}_t]}^\dagger.
+ *   @f]
+ *
+ * @constraints
+ * 
+ * - Unitarity of @f$ \hat{U} = @f$ @p matrix requires that 
+ *   @f$ \hat{U} \hat{U}^\dagger = \id @f$. Validation will check that @p matrix is
+ *   approximately unitary via
+ *   @f[ 
+        \max\limits_{ij} \Big|\left(\hat{U} \hat{U}^\dagger - \id\right)_{ij}\Big|^2 \le \valeps
+ *   @f]
+ *   where the validation epsilon @f$ \valeps @f$ can be adjusted with setValidationEpsilon().
+ *
+ * @equivalences
+ * 
+ * - This function is faster than, but mathematically equivalent to, initialising a two-qubit
+ *   matrix (CompMatr2) to the @f$C_1[\hat{U}_0]@f$ matrix above, and calling applyCompMatr2():
+ *   ```
+     CompMatr2 m = getInlineCompMatr2({
+         {1,0,0,0}, 
+         {0,1,0,0}, 
+         {0,0,u00,u01}, 
+         {0,0,u10,u11}});
+     
+     applyCompMatr2(qureg, target, control);
+ *   ```
+ *
+ * @myexample
+ * ```
+    Qureg qureg = createQureg(5);
+
+    CompMatr1 matrix = getInlineCompMatr1({
+        {-1i/sqrt(2), 1i/sqrt(2)},
+        {(1i-1)/2,    (1i-1)/2}
+    });
+
+    // C_0[U_2]
+    applyControlledCompMatr1(qureg, 0, 2, matrix); 
+ * ```
+
+ * @param[in,out] qureg   the state to modify.
+ * @param[in]     control the index of the control qubit.
+ * @param[in]     target  the index of the target qubit.
+ * @param[in]     matrix  the Z-basis unitary matrix to effect.
+ * @throws @validationerror
+ * - if @p qureg or @p matrix are uninitialised.
+ * - if @p matrix is not approximately unitary.
+ * - if @p control or @p target are an invalid qubit index.
+ * - if @p control and @p target overlap.
  * @see
- * - applyCompMatr1()
+ * - applyMultiControlledCompMatr1()
+ * - applyMultiStateControlledCompMatr1()
+ * @author Tyson Jones
  */
 void applyControlledCompMatr1(Qureg qureg, int control, int target, CompMatr1 matrix);
 
@@ -244,6 +276,24 @@ digraph {
   {rank=same; topWireR; midWireR; botWireR};
 }
  * @enddot
+ *
+ * @formulae
+ * 
+ * Let @f$ \vec{c} = @f$ @p controls, @f$ t = @f$ @p target, and @f$ \hat{U} = @f$ @p matrix.
+ * This functions effects operator
+ * 
+ * @f[
+    C_{\vec{c}}[\hat{U}_t]
+ * @f]
+ *
+ * which is equivalent to applying @f$ \hat{U}_t @f$ upon only the computational basis states for which 
+ * all control qubits are in the @f$ \ket{1} @f$ state.
+ *
+ * Precisely, let @f$n = 2^{|\vec{c}|}-1@f$. Then
+ * @f[
+    C_{\vec{c}}[\hat{U}_t] = \sum\limits_{i=0}^{n-1} \ketbra{i}{i}_{\vec{c}} \otimes \hat{\id}_t
+      + \ketbra{n}{n}_{\vec{c}} \otimes \hat{U}_t
+ * @f]
  *
  * @see
  * - applyCompMatr1()
@@ -338,13 +388,6 @@ extern "C" {
 #endif
 
 
-/// @notyetdoced
-/// @see
-/// - applyCompMatr2()
-/// - multiplyCompMatr1()
-void multiplyCompMatr2(Qureg qureg, int target1, int target2, CompMatr2 matr);
-
-
 /** @notyetdoced
  * 
  * Applies a general two-qubit dense unitary @p matrix to qubits @p target1 and
@@ -373,6 +416,8 @@ digraph {
  *
  * @see
  * - applyCompMatr1()
+ * - leftapplyCompMatr2()
+ * - rightapplyCompMatr2()
  */
 void applyCompMatr2(Qureg qureg, int target1, int target2, CompMatr2 matrix);
 
@@ -549,30 +594,23 @@ extern "C" {
 
 /** @notyetdoced
  * 
- * @see
- * - applyCompMatr()
- * - multiplyCompMatr1()
- */
-void multiplyCompMatr(Qureg qureg, int* targets, int numTargets, CompMatr matrix);
-
-
-/** @notyetdoced
- * 
  * @formulae
  * 
  * Let @f$ M = @f$ @p matrix.
  * The qubits within @p targets are treated to be ordered least to most significant with respect
  * to @f$ M @f$. That is, if @f$ M @f$ was hypothetically separable single-qubit matrices
  * @f[
-      M \equiv A \otimes B \otimes C \otimes \dots 
+      M \equiv \dots \otimes C \otimes B \otimes A
  * @f]
  * then this function would effect
  * @f[
-      \hat{M}_{\text{targets}} \equiv A_{\text{targets}[0]} B_{\text{targets}[1]} C_{\text{targets}[2]} \dots
+      \hat{M}_{\text{targets}} \equiv A_{\text{targets}[0]} \cdot B_{\text{targets}[1]} \cdot C_{\text{targets}[2]} \cdot \dots
  * @f]
  *
  * @see
  * - applyCompMatr1()
+ * - leftapplyCompMatr()
+ * - rightapplyCompMatr()
  */
 void applyCompMatr(Qureg qureg, int* targets, int numTargets, CompMatr matr);
 
@@ -601,14 +639,6 @@ void applyMultiStateControlledCompMatr(Qureg qureg, int* controls, int* states, 
 #endif
 
 #ifdef __cplusplus
-
-
-/// @notyettested
-/// @notyetvalidated
-/// @notyetdoced
-/// @cppvectoroverload
-/// @see multiplyCompMatr()
-void multiplyCompMatr(Qureg qureg, std::vector<int> targets, CompMatr matr);
 
 
 /// @notyettested
@@ -661,13 +691,12 @@ extern "C" {
 #endif
 
 
-/// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyDiagMatr1(Qureg qureg, int target, DiagMatr1 matr);
-
-
-/// @notyetdoced
-/// @see applyCompMatr1()
+/** @notyetdoced
+ * @see 
+ * - applyCompMatr1()
+ * - leftapplyCompMatr2()
+ * - rightapplyCompMatr2()
+ */
 void applyDiagMatr1(Qureg qureg, int target, DiagMatr1 matr);
 
 
@@ -726,11 +755,6 @@ void applyMultiStateControlledDiagMatr1(Qureg qureg, std::vector<int> controls, 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-
-/// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyDiagMatr2(Qureg qureg, int target1, int target2, DiagMatr2 matr);
 
 
 /// @notyetdoced
@@ -796,11 +820,6 @@ extern "C" {
 
 
 /// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyDiagMatr(Qureg qureg, int* targets, int numTargets, DiagMatr matrix);
-
-
-/// @notyetdoced
 /// @see applyCompMatr1()
 void applyDiagMatr(Qureg qureg, int* targets, int numTargets, DiagMatr matrix);
 
@@ -818,13 +837,6 @@ void applyMultiControlledDiagMatr(Qureg qureg, int* controls, int numControls, i
 /// @notyetdoced
 /// @see applyMultiStateControlledCompMatr1()
 void applyMultiStateControlledDiagMatr(Qureg qureg, int* controls, int* states, int numControls, int* targets, int numTargets, DiagMatr matrix);
-
-
-/// @notyetdoced
-/// @see
-/// - multiplyCompMatr1()
-/// - applyDiagMatrPower()
-void multiplyDiagMatrPower(Qureg qureg, int* targets, int numTargets, DiagMatr matrix, qcomp exponent);
 
 
 /** @notyetdoced
@@ -869,14 +881,6 @@ void applyMultiStateControlledDiagMatrPower(Qureg qureg, int* controls, int* sta
 /// @notyetvalidated
 /// @notyetdoced
 /// @cppvectoroverload
-/// @see multiplyDiagMatr()
-void multiplyDiagMatr(Qureg qureg, std::vector<int> targets, DiagMatr matrix);
-
-
-/// @notyettested
-/// @notyetvalidated
-/// @notyetdoced
-/// @cppvectoroverload
 /// @see applyDiagMatr()
 void applyDiagMatr(Qureg qureg, std::vector<int> targets, DiagMatr matrix);
 
@@ -903,14 +907,6 @@ void applyMultiControlledDiagMatr(Qureg qureg, std::vector<int> controls, std::v
 /// @cppvectoroverload
 /// @see applyMultiStateControlledDiagMatr()
 void applyMultiStateControlledDiagMatr(Qureg qureg, std::vector<int> controls, std::vector<int> states, std::vector<int> targets, DiagMatr matrix);
-
-
-/// @notyettested
-/// @notyetvalidated
-/// @notyetdoced
-/// @cppvectoroverload
-/// @see multiplyDiagMatrPower()
-void multiplyDiagMatrPower(Qureg qureg, std::vector<int> targets, DiagMatr matrix, qcomp exponent);
 
 
 /// @notyettested
@@ -961,21 +957,6 @@ void applyMultiStateControlledDiagMatrPower(Qureg qureg, std::vector<int> contro
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-
-/// @notyetdoced
-/// @notyetvalidated
-/// @see
-/// - multiplyCompMatr1
-void multiplyFullStateDiagMatr(Qureg qureg, FullStateDiagMatr matrix);
-
-
-/// @notyetdoced
-/// @notyetvalidated
-/// @see
-/// - multiplyCompMatr1
-/// - applyDiagMatrPower
-void multiplyFullStateDiagMatrPower(Qureg qureg, FullStateDiagMatr matrix, qcomp exponent);
 
 
 /// @notyetdoced
@@ -1137,11 +1118,6 @@ extern "C" {
 #endif
 
 
-/// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplySwap(Qureg qureg, int qubit1, int qubit2);
-
-
 /** Applies a SWAP gate between @p qubit1 and @p qubit2 of @p qureg.
  * 
  * @diagram
@@ -1260,21 +1236,6 @@ void applyMultiStateControlledSqrtSwap(Qureg qureg, std::vector<int> controls, s
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-
-/// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyPauliX(Qureg qureg, int target);
-
-
-/// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyPauliY(Qureg qureg, int target);
-
-
-/// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyPauliZ(Qureg qureg, int target);
 
 
 /// @notyetdoced
@@ -1403,11 +1364,6 @@ extern "C" {
 
 
 /// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyPauliStr(Qureg qureg, PauliStr str);
-
-
-/// @notyetdoced
 void applyPauliStr(Qureg qureg, PauliStr str);
 
 
@@ -1483,6 +1439,7 @@ extern "C" {
  * upon the @p target qubit, where @f$ \hat{\sigma}_x @f$ is the Pauli X matrix.
  *
  * @equivalences
+ * 
  * - This function is entirely equivalent to calling applyPauliGadget() with a single-site PauliStr.
  *   ```
      applyPauliGadget(qureg, getInlinePauliStr("X", {target}), angle);
@@ -1521,6 +1478,7 @@ void applyRotateX(Qureg qureg, int target, qreal angle);
  * upon the @p target qubit, where @f$ \hat{\sigma}_y @f$ is the Pauli Y matrix.
  *
  * @equivalences
+ * 
  * - This function is entirely equivalent to calling applyPauliGadget() with a single-site PauliStr.
  *   ```
      applyPauliGadget(qureg, getInlinePauliStr("Y", {target}), angle);
@@ -1559,6 +1517,7 @@ void applyRotateY(Qureg qureg, int target, qreal angle);
  * upon the @p target qubit, where @f$ \hat{\sigma}_z @f$ is the Pauli Z matrix.
  *
  * @equivalences
+ * 
  * - This function is entirely equivalent to calling applyPauliGadget() with a single-site PauliStr.
  *   ```
      applyPauliGadget(qureg, getInlinePauliStr("Z", {target}), angle);
@@ -1666,6 +1625,7 @@ void applyMultiStateControlledRotateZ(Qureg qureg, int* controls, int* states, i
  * @f]
  *
  * @equivalences
+ * 
  * - Assuming @f$ \| \vec{n} \|_2 \ne 0 @f$, this function is agnostic to the normalisation
  *   of the axis vector.
  *   ```
@@ -1777,7 +1737,7 @@ void applyMultiStateControlledRotateAroundAxis(Qureg qureg, std::vector<int> ctr
 
 
 /** 
- * @defgroup op_pauligadget Pauli gadgets
+ * @defgroup op_pauligadget PauliStr gadgets
  * @brief Functions for applying many-qubit rotations around arbitrary PauliStr.
  * @{
  */
@@ -1788,16 +1748,10 @@ extern "C" {
 #endif
 
 
-/// @notyetdoced
-/// @see 
-/// - multiplyCompMatr1()
-/// - applyPauliGadget()
-void multiplyPauliGadget(Qureg qureg, PauliStr str, qreal angle);
-
-
 /** @notyetdoced
  * 
  * @formulae
+ * 
  * Let @f$ \hat{\sigma} = @f$ @p str and @f$ \theta = @f$ @p angle. 
  * 
  * This function effects unitary
@@ -1808,6 +1762,7 @@ void multiplyPauliGadget(Qureg qureg, PauliStr str, qreal angle);
  * Pauli. As such, this effects a multi-qubit rotation around an arbitrary Pauli string.
  * 
  * @equivalences
+ * 
  * - Because @f$ R_{\hat{\sigma}}(\theta) @f$ satisfies
  *   @f[
         R_{\hat{\sigma}}(\theta) \equiv 
@@ -1815,14 +1770,16 @@ void multiplyPauliGadget(Qureg qureg, PauliStr str, qreal angle);
           - \iu  \sin\left( \frac{\theta}{2} \right) \, \hat{\sigma},
  *   @f]
  *   this function is equivalent to (but much faster than) effecting @f$ \hat{\sigma} @f$
- *   upon a clone which is subsequently superposed.
+ *   upon a clone which is subsequently combined.
  *   ```
      // prepare |temp> = str |qureg>
      Qureg temp = createCloneQureg(qureg);
      applyPauliStr(temp, str);
 
      // set |qureg> = cos(theta/2) |qureg> - i sin(theta/2) str |qureg>
-     setQuregToSuperposition(cos(theta/2), qureg, - 1.0i * sin(theta/2), temp, 0, temp);
+     qcomp coeffs[] = {cos(theta/2), -1i * sin(theta/2)};
+     Qureg quregs[] = {qureg, temp};
+     setQuregToWeightedSum(qureg, coeffs, quregs, 2);
  *   ```
  * - When @p str contains only @f$ \hat{Z} @f$ or @f$ \id @f$ Paulis, this function will
  *   automatically invoke applyPhaseGadget() which leverages an optimised implementation.
@@ -1831,8 +1788,9 @@ void multiplyPauliGadget(Qureg qureg, PauliStr str, qreal angle);
  *   unchanged.
  *   ```
      qcomp factor = cexp(- theta / 2 * 1.i);
-     setQuregToSuperposition(factor, qureg, 0,qureg,0,qureg);
+     setQuregToWeightedSum(qureg, &factor, &qureg, 1);
  *   ```
+ * - Passing @p angle=0 is equivalent to effecting the identity, leaving the state unchanged.
  *
  * @myexample
  * ```
@@ -1849,9 +1807,18 @@ void multiplyPauliGadget(Qureg qureg, PauliStr str, qreal angle);
     // concisely
     applyPauliGadget(qureg, getInlinePauliStr("XYZ",{0,1,7}), theta);
  * ```
- * - Passing @p angle=0 is equivalent to effecting the identity, leaving the state unchanged.
+ *
+ * @see
+ *  - applyNonUnitaryPauliGadget()
  */
 void applyPauliGadget(Qureg qureg, PauliStr str, qreal angle);
+
+
+/** @notyetdoced
+ * 
+ * This function generalises applyPauliGadget() to accept a complex angle.
+ */
+void applyNonUnitaryPauliGadget(Qureg qureg, PauliStr str, qcomp angle);
 
 
 /// @notyetdoced
@@ -1911,13 +1878,6 @@ extern "C" {
 #endif
 
 
-/// @notyetdoced
-/// @see 
-/// - multiplyCompMatr1()
-/// - applyPhaseGadget
-void multiplyPhaseGadget(Qureg qureg, int* targets, int numTargets, qreal angle);
-
-
 /** @notyetdoced
  * 
  * @formulae
@@ -1930,6 +1890,7 @@ void multiplyPhaseGadget(Qureg qureg, int* targets, int numTargets, qreal angle)
  * @f]
  *
  * @equivalences
+ * 
  * - This function is equivalent to calling applyPauliGadget() with a PauliStr containing only @f$ \hat{Z} @f$ and @f$ \id @f$.
  *   This latter function will actually automatically invoke applyPhaseGadget() which has an optimised implementation.
  * - This function is equivalent to, albeit much faster than, preparing a DiagMatr with @f$ \pm 1 @f$ elements (depending upon
@@ -1973,6 +1934,7 @@ void applyPhaseFlip(Qureg qureg, int target);
  * upon the @p target qubit.
  * 
  * @equivalences
+ * 
  * - This function is equivalent to, albeit much faster than, a Z-axis rotation with
  *   an adjustment to the global phase (which is redundant upon density matrices).
  *   @f[
@@ -2025,6 +1987,7 @@ digraph {
  * @enddot
  *
  * @equivalences
+ * 
  * - The target qubits are interchangeable, ergo
  *   ```
      applyTwoQubitPhaseFlip(qureg, target1, target2);
@@ -2085,6 +2048,7 @@ digraph {
  * @enddot
  *
  * @equivalences
+ * 
  * - The target qubits are interchangeable, ergo
  *   ```
      applyTwoQubitPhaseShift(qureg, target1, target2, angle);
@@ -2111,6 +2075,7 @@ void applyTwoQubitPhaseShift(Qureg qureg, int target1, int target2, qreal angle)
  * effected upon the target qubits.
  * 
  * @equivalences
+ * 
  * - The ordering of @p targets has no affect on the effected operation.
  * - This function is entirely equivalent to a multi-controlled Pauli-Z unitary (or a hypothetical
  *   many-controlled variant of applyPhaseFlip()) with all but one arbitrary target qubit becoming
@@ -2165,6 +2130,7 @@ digraph {
  * @enddot
  *
  * @equivalences
+ * 
  * - The ordering of @p targets has no affect on the effected operation.
  * - This function is equivalent to a multi-controlled variant of applyPhaseShift(), treating all
  *   but one arbitrary target qubit as control qubits.
@@ -2180,14 +2146,6 @@ void applyMultiQubitPhaseShift(Qureg qureg, int* targets, int numTargets, qreal 
 #endif
 
 #ifdef __cplusplus
-
-
-/// @notyettested
-/// @notyetvalidated
-/// @notyetdoced
-/// @cppvectoroverload
-/// @see multiplyPhaseGadget()
-void multiplyPhaseGadget(Qureg qureg, std::vector<int> targets, qreal angle);
 
 
 /// @notyettested
@@ -2245,88 +2203,6 @@ void applyMultiQubitPhaseShift(Qureg qureg, std::vector<int> targets, qreal angl
 
 
 /** 
- * @defgroup op_paulistrsum PauliStrSum
- * @brief Functions for applying, exponentiating or Trotterising a weigthed sum of Pauli tensors.
- * @{
- */
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-
-/// @notyetdoced
-/// @notyetvalidated
-/// @see multiplyCompMatr1()
-void multiplyPauliStrSum(Qureg qureg, PauliStrSum sum, Qureg workspace);
-
-
-/** @notyetdoced
- * @notyettested
- * 
- * @formulae 
- * 
- * Let @f$ \hat{H} = @f$ @p sum and @f$ \theta = @f$ @p angle. This function approximates the action of
- * @f[
-      \exp \left(\iu \, \theta \, \hat{H} \right)
- * @f]
- * via a Trotter-Suzuki decomposition of the specified @p order and number of repetitions (@p reps).
- * 
- * 
- * To be precise, let @f$ r = @f$ @p reps and assume @p sum is composed of
- * @f$ T @f$-many terms of the form
- * @f[
-      \hat{H} = \sum\limits_j^T c_j \, \hat{\sigma}_j
- * @f]
- * where @f$ c_j @f$ is the (necessarily real) coefficient of the @f$ j @f$-th PauliStr @f$ \hat{\sigma}_j @f$.
- * 
- * - When @p order=1, this function performs first-order Trotterisation, whereby
- *   @f[
-       \exp(\iu \, \theta \, \hat{H} )
-          \approx 
-        \prod\limits^{r} 
-        \prod\limits_{j=1}^{T} 
-        \exp \left( \iu \, \frac{\theta \, c_j}{r} \, \hat\sigma_j \right).
- *   @f]
- * - When @p order=2, this function performs the lowest order "symmetrized" Suzuki decomposition, whereby 
- *   @f[
-       \exp(\iu \, \theta \, \hat{H} )
-          \approx 
-        \prod\limits^{r} \left[
-             \prod\limits_{j=1}^{T} \exp \left( \iu \frac{\theta \, c_j}{2 \, r}  \hat\sigma_j \right)
-              \prod\limits_{j=T}^{1} \exp \left( \iu \frac{\theta \, c_j}{2 \, r}  \hat\sigma_j \right)
-         \right].
- *   @f]
- * - Greater, even values of @p order (denoted by symbol @f$ n @f$) invoke higher-order symmetrized decompositions 
- *   @f$ S[\theta,n,r] @f$. Letting @f$ p = \left( 4 - 4^{1/(n-1)} \right)^{-1} @f$, these satisfy
- *   @f{align*}
-        S[\theta, n, 1] &= 
-            \left( \prod\limits^2 S[p \, \theta, n-2, 1] \right)
-            S[ (1-4p)\,\theta, n-2, 1]
-            \left( \prod\limits^2 S[p \, \theta, n-2, 1] \right),
-        \\
-        S[\theta, n, r] &= 
-            \prod\limits^{r} S\left[\frac{\theta}{r}, n, 1\right].
- *   @f}
- * 
- * > These formulations are taken from 'Finding Exponential Product Formulas
- * > of Higher Orders', Naomichi Hatano and Masuo Suzuki (2005) (<a href="https://arxiv.org/abs/math-ph/0506007">arXiv</a>).
- */
-void applyTrotterizedPauliStrSumGadget(Qureg qureg, PauliStrSum sum, qreal angle, int order, int reps);
-
-
-// end de-mangler
-#ifdef __cplusplus
-}
-#endif
-
-
-/** @} */
-
-
-
-/** 
  * @defgroup op_nots Many-not gates
  * @brief Functions for effecting many-qubit NOT gates
  * @{
@@ -2336,11 +2212,6 @@ void applyTrotterizedPauliStrSumGadget(Qureg qureg, PauliStrSum sum, qreal angle
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-
-/// @notyetdoced
-/// @see multiplyCompMatr1()
-void multiplyMultiQubitNot(Qureg qureg, int* targets, int numTargets);
 
 
 /// @notyetdoced
@@ -2367,14 +2238,6 @@ void applyMultiStateControlledMultiQubitNot(Qureg qureg, int* controls, int* sta
 #endif
 
 #ifdef __cplusplus
-
-
-/// @notyettested
-/// @notyetvalidated
-/// @notyetdoced
-/// @cppvectoroverload
-/// @see multiplyMultiQubitNot()
-void multiplyMultiQubitNot(Qureg qureg, std::vector<int> targets);
 
 
 /// @notyettested

@@ -15,13 +15,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
 
-// must define preprocessors to enable quest's
-// deprecated v3 API, and disable the numerous
-// warnings issued by its compilation
-#define INCLUDE_DEPRECATED_FUNCTIONS 1
-#define DISABLE_DEPRECATION_WARNINGS 1
 #include "quest.h"
-
 #include "test_utilities.hpp"
 
 /* allows concise use of ContainsSubstring in catch's REQUIRE_THROWS_WITH */
@@ -918,8 +912,8 @@ TEST_CASE( "calcInnerProduct", "[calculations]" ) {
                 toQureg(vec2, r2);
                 qcomp res = calcInnerProduct(vec1,vec2);
                 
-                REQUIRE( real(res) == Approx(real(prod)) );
-                REQUIRE( imag(res) == Approx(imag(prod)) );
+                REQUIRE( real(res) == Approx(real(prod)).margin(REAL_EPS) );
+                REQUIRE( imag(res) == Approx(imag(prod)).margin(REAL_EPS) );
             }
         }
     }

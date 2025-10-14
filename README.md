@@ -19,7 +19,7 @@
   [![DOI](https://img.shields.io/badge/DOI-10.1038%2Fs41598--019--47174--9-yellow.svg)](https://doi.org/10.1038/s41598-019-47174-9)
   <br>
   [![GitHub release](https://img.shields.io/github/release/QuEST-Kit/QuEST)](https://GitHub.com/QuEST-Kit/QuEST/releases/) 
-  [![Doc](https://img.shields.io/badge/doc-Github.io-orange.svg)](https://quest-kit.github.io/QuEST/modules.html)
+  [![Doc](https://img.shields.io/badge/doc-Github.io-orange.svg)](https://quest-kit.github.io/QuEST/group__api.html)
   [![MIT license](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENCE.txt)
 
 
@@ -28,9 +28,6 @@
 
 
 <!-- intro -->
-
-> [!NOTE]
-> QuEST `v4` has been released which re-designed QuEST from the ground up. Read about the exciting new features [here](docs/v4.md).
 
 The **Quantum Exact Simulation Toolkit** (QuEST) is a high-performance simulator of quantum statevectors and density matrices.
 It hybridises **multithreading**, **GPU acceleration** and **distribution** to run lightning fast on laptops, desktops and 
@@ -58,9 +55,8 @@ by both `C` and `C++` and all the major compilers (detailed [here](docs/compiler
 
 </div>
 
-
-QuEST development is led by the [QTechTheory](http://qtechtheory.org/) group at the University of Oxford, with active contributions from the [EPCC](https://www.epcc.ed.ac.uk/) team at the University of Edinburgh, and support from the below organisations.
-In particular, QuEST `v4` was made possible through the support of the UK National Quantum Computing centre (_NQCC200921_) and the [UKRI SEEQA](https://gtr.ukri.org/projects?ref=EP%2FY004655%2F1#/tabOverview) project.
+As of `v4.2`, QuEST development is led by the [EPCC](https://www.epcc.ed.ac.uk/) team at the University of Edinburgh, with support and former development by the [QTechTheory](http://qtechtheory.org/) group at the University of Oxford. QuEST has also received contributions and support from the below organisations.
+In particular, QuEST `v4.0` was made possible through the support of the UK National Quantum Computing centre (_NQCC200921_) and the [UKRI SEEQA](https://gtr.ukri.org/projects?ref=EP%2FY004655%2F1#/tabOverview) project.
 
 <div align="center">
 
@@ -116,8 +112,8 @@ applyMultiQubitProjector(qureg, targs, outcomes, ntargs);
 applyControlledPauliGadget(qureg, ctrl, paulistr, angle);
 applyMultiStateControlledSwap(qureg, ctrls, states, nctrls, targ1, targ2);
 
-multiplyCompMatr1(qureg, targ, getInlineCompMatr1( {{1,2i},{3i,4}} ));
-multiplyDiagMatrPower(qureg, targs, ntargs, diagmatr, exponent);
+leftapplyCompMatr1(qureg, targ, getInlineCompMatr1( {{1,2i},{3i,4}} ));
+leftapplyDiagMatrPower(qureg, targs, ntargs, diagmatr, exponent);
 ```
 and extremely powerful
 ```cpp
@@ -257,6 +253,8 @@ See the [docs](docs/README.md) for enabling acceleration and running the unit te
 
 In addition to QuEST's [authors](AUTHORS.txt), we sincerely thank the following external contributors to QuEST.
 
+- [Diogo Pratas Maia](https://github.com/diogomaia00) for implementing non-unitary Pauli gadgets (unitaryHACK 2025 [#594](https://github.com/QuEST-Kit/QuEST/issues/594)).
+- [Mai Đức Khang](https://github.com/Roll249) for implementing a RAM probe (unitaryHACK 2025 [#600](https://github.com/QuEST-Kit/QuEST/issues/600)). 
 - [James Richings](https://github.com/JPRichings) for patching a v4 overflow bug.
 - [Luc Jaulmes](https://github.com/lucjaulmes) for patching v4's CMake installation.
 - [Jakub Adamski](https://github.com/jjacobx) for optimising distributed communication of max-size messages.

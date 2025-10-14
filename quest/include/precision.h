@@ -1,6 +1,6 @@
 /** @file
- * User-overridable numerical precision of
- * both the QuEST API and backends
+ * The precision of QuEST's numerical types, some of which 
+ * are overridable and others of which are intendedly fixed.
  * 
  * @author Tyson Jones
  * @author Milos Prokop (patched trig overloads in v3)
@@ -14,7 +14,7 @@
 #ifndef PRECISION_H
 #define PRECISION_H
 
-#include "quest/include/modes.h"
+#include "quest/include/config.h"
 
 
 
@@ -76,11 +76,6 @@
  * RE-CONFIGURABLE FLOATING-POINT PRECISION
  */
 
-// assume double precision as default
-#ifndef FLOAT_PRECISION
-    #define FLOAT_PRECISION 2
-#endif
-
 // validate precision is 1 (float), 2 (double) or 4 (long double)
 #if ! (FLOAT_PRECISION == 1 || FLOAT_PRECISION == 2 || FLOAT_PRECISION == 4)
     #error "FLOAT_PRECISION must be 1 (float), 2 (double) or 4 (long double)"
@@ -100,10 +95,14 @@
 
     /// @notyetdoced
     /// @macrodoc
+    ///
+    /// (note this macro is informed by the FLOAT_PRECISION CMake variable)
     const int FLOAT_PRECISION = 2;
 
     /// @notyetdoced
     /// @macrodoc
+    ///
+    /// (note this macro is informed by the FLOAT_PRECISION CMake variable)
     typedef double int FLOAT_TYPE;
 
 #endif
@@ -121,34 +120,19 @@
 
 
 /*
- * RE-CONFIGURABLE DEFAULT VALIDATION PRECISION
+ * DEFAULT VALIDATION PRECISION
  *
- * which is compile-time overridable by pre-defining DEFAULT_VALIDATION_EPSILON (e.g. 
- * in user code before importing QuEST, or passed as a preprocessor constant by the
- * compiler using argument -D), and runtime overridable using setValidationEpsilon()
+ * which is pre-run-time overridable by specifying the corresponding environment variable.
  */
 
-#ifndef DEFAULT_VALIDATION_EPSILON
+#if FLOAT_PRECISION == 1
+    #define UNSPECIFIED_DEFAULT_VALIDATION_EPSILON 1E-5
 
-    #if FLOAT_PRECISION == 1
-        #define DEFAULT_VALIDATION_EPSILON 1E-5
+#elif FLOAT_PRECISION == 2
+    #define UNSPECIFIED_DEFAULT_VALIDATION_EPSILON 1E-12
 
-    #elif FLOAT_PRECISION == 2
-        #define DEFAULT_VALIDATION_EPSILON 1E-12
-
-    #elif FLOAT_PRECISION == 4
-        #define DEFAULT_VALIDATION_EPSILON 1E-13
-
-    #endif
-
-#endif
-
-// spoofing above macros as typedefs and consts to doc
-#if 0
-
-    /// @notyetdoced
-    /// @macrodoc
-    const qreal DEFAULT_VALIDATION_EPSILON = 1E-12;
+#elif FLOAT_PRECISION == 4
+    #define UNSPECIFIED_DEFAULT_VALIDATION_EPSILON 1E-13
 
 #endif
 
