@@ -175,21 +175,21 @@ auto getEndPtr(FullStateDiagMatr matr) {
  */
 
 
-struct functor_getAmpConj : public thrust::unary_function<cu_qcomp,cu_qcomp> {
+struct functor_getAmpConj {
 
     __host__ __device__ cu_qcomp operator()(cu_qcomp amp) {
         return getCompConj(amp);
     }
 };
 
-struct functor_getAmpNorm : public thrust::unary_function<cu_qcomp,qreal> {
+struct functor_getAmpNorm {
 
     __host__ __device__ qreal operator()(cu_qcomp amp) {
         return getCompNorm(amp);
     }
 };
 
-struct functor_getAmpReal : public thrust::unary_function<cu_qcomp,qreal> {
+struct functor_getAmpReal {
 
     __host__ __device__ qreal operator()(cu_qcomp amp) {
         return getCompReal(amp);
@@ -197,14 +197,14 @@ struct functor_getAmpReal : public thrust::unary_function<cu_qcomp,qreal> {
 };
 
 
-struct functor_getAmpConjProd : public thrust::binary_function<cu_qcomp,cu_qcomp,cu_qcomp> {
+struct functor_getAmpConjProd {
 
     __host__ __device__ cu_qcomp operator()(cu_qcomp braAmp, cu_qcomp ketAmp) { 
         return getCompConj(braAmp) * ketAmp;
     }
 };
 
-struct functor_getNormOfAmpDif : public thrust::binary_function<cu_qcomp,cu_qcomp,qreal> {
+struct functor_getNormOfAmpDif {
 
     __host__ __device__ qreal operator()(cu_qcomp amp1, cu_qcomp amp2) { 
         return getCompNorm(amp1 - amp2);
@@ -212,7 +212,7 @@ struct functor_getNormOfAmpDif : public thrust::binary_function<cu_qcomp,cu_qcom
 };
 
 
-struct functor_getExpecStateVecZTerm : public thrust::binary_function<qindex,cu_qcomp,qreal> {
+struct functor_getExpecStateVecZTerm {
 
     // this functor computes a single term from the sum
     // in the expectation value of Z of a statevector
@@ -229,7 +229,7 @@ struct functor_getExpecStateVecZTerm : public thrust::binary_function<qindex,cu_
 };
 
 
-struct functor_getExpecDensMatrZTerm : public thrust::unary_function<qindex,cu_qcomp> {
+struct functor_getExpecDensMatrZTerm {
 
     // this functor computes a single term from the sum
     // in the expectation value of Z of a density matrix
@@ -252,7 +252,7 @@ struct functor_getExpecDensMatrZTerm : public thrust::unary_function<qindex,cu_q
 };
 
 
-struct functor_getExpecStateVecPauliTerm : public thrust::unary_function<qindex,cu_qcomp> {
+struct functor_getExpecStateVecPauliTerm {
 
     // this functor computes a single term from the sum in the
     // expectation value of a Pauli str (which necessarily contains 
@@ -276,7 +276,7 @@ struct functor_getExpecStateVecPauliTerm : public thrust::unary_function<qindex,
 };
 
 
-struct functor_getExpecDensMatrPauliTerm : public thrust::unary_function<qindex,cu_qcomp> {
+struct functor_getExpecDensMatrPauliTerm {
 
     // this functor computes a single term from the sum in the
     // expectation value of a Pauli str (which necessarily contains 
@@ -304,7 +304,7 @@ struct functor_getExpecDensMatrPauliTerm : public thrust::unary_function<qindex,
 
 
 template <bool HasPower, bool UseRealPow>
-struct functor_getExpecDensMatrDiagMatrTerm : public thrust::unary_function<qindex,cu_qcomp> {
+struct functor_getExpecDensMatrDiagMatrTerm {
 
     // this functor computes a single term from the sum in the expectation 
     // value of a FullStateDiagMatr upon a density matrix
@@ -372,7 +372,7 @@ struct functor_setAmpToPauliStrSumElem {
 };
 
 
-struct functor_mixAmps : public thrust::binary_function<cu_qcomp,cu_qcomp,cu_qcomp> {
+struct functor_mixAmps {
 
     // this functor linearly combines the given pair
     // of amplitudes, weighted by the fixed qreals,
@@ -389,7 +389,7 @@ struct functor_mixAmps : public thrust::binary_function<cu_qcomp,cu_qcomp,cu_qco
 
 
 template <bool HasPower, bool UseRealPow, bool Norm>
-struct functor_multiplyElemPowerWithAmpOrNorm : public thrust::binary_function<cu_qcomp,cu_qcomp,cu_qcomp> {
+struct functor_multiplyElemPowerWithAmpOrNorm {
 
     // this functor multiplies a diagonal matrix element 
     // raised to a power (templated to optimise away the 
@@ -415,7 +415,7 @@ struct functor_multiplyElemPowerWithAmpOrNorm : public thrust::binary_function<c
 };
 
 
-struct functor_getDiagInd : public thrust::unary_function<qindex,qindex> {
+struct functor_getDiagInd {
 
     // this functor accepts the index of a statevector 
     // basis-state and produces the index of a density 
@@ -435,7 +435,7 @@ struct functor_getDiagInd : public thrust::unary_function<qindex,qindex> {
 
 
 template <int NumBits>
-struct functor_insertBits : public thrust::unary_function<qindex,qindex> {
+struct functor_insertBits {
 
     // this functor inserts bits into a qindex value, and
     // is used to enumerate specific basis-state indices
@@ -463,8 +463,7 @@ struct functor_insertBits : public thrust::unary_function<qindex,qindex> {
 
 
 template <bool Conj>
-struct functor_getFidelityTerm : public thrust::unary_function<qindex,cu_qcomp>
-{
+struct functor_getFidelityTerm {
     int rank, numQubits;
     qindex logNumAmpsPerNode, numAmpsPerCol;
     cu_qcomp *rho, *psi;
@@ -503,7 +502,7 @@ struct functor_getFidelityTerm : public thrust::unary_function<qindex,cu_qcomp>
 
 
 template <int NumTargets>
-struct functor_projectStateVec : public thrust::binary_function<qindex,cu_qcomp,cu_qcomp> {
+struct functor_projectStateVec {
 
     // this functor multiplies an amp with zero or a 
     // renormalisation codfficient, depending on whether
@@ -540,7 +539,7 @@ struct functor_projectStateVec : public thrust::binary_function<qindex,cu_qcomp,
 
 
 template <int NumTargets>
-struct functor_projectDensMatr : public thrust::binary_function<qindex,cu_qcomp,cu_qcomp> {
+struct functor_projectDensMatr {
 
     // this functor multiplies an amp with zero or a 
     // renormalisation coefficient, depending on whether
@@ -585,7 +584,7 @@ struct functor_projectDensMatr : public thrust::binary_function<qindex,cu_qcomp,
 };
 
 
-struct functor_setRandomStateVecAmp : public thrust::unary_function<qindex,cu_qcomp> {
+struct functor_setRandomStateVecAmp {
 
     // this functor generates a random, unnormalised
     // statevector amplitude which, after normalisation
